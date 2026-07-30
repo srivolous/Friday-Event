@@ -1,17 +1,33 @@
-livekit-plugins-openai
-livekit-plugins-sileromem0ai
-langchain_community
-python-dotenv
-requests
-livekit-agents
-livekit-plugins-google
-livekit-plugins-noise-cancellation
-ollama
-faster-whisper
-sounddevice
-soundfile
-scipy
-numpy
-pypdf
-python-docx
-duckduckgo-search
+# ——— LLM Backends ———
+ollama==0.6.2                    # Ollama Python client (local or remote LAN endpoint)
+google-genai==2.14.0             # Google Gemini API SDK (primary LLM if GOOGLE_API_KEY is set)
+
+# ——— Speech: STT & TTS (always runs locally on this machine) ———
+faster-whisper==1.2.1            # Faster Whisper STT (runs on CPU via int8)
+kokoro==0.9.4                    # Kokoro TTS engine
+kokoro-onnx==0.5.0               # Kokoro ONNX runtime backend
+sounddevice==0.5.5               # Audio playback / capture
+soundfile==0.14.0                # WAV audio I/O
+
+# ——— Core Utilities ———
+python-dotenv==1.2.2             # Load environment variables from .env
+requests==2.34.2                 # HTTP requests (weather tool, etc.)
+numpy==2.4.1                     # Numerical arrays for audio processing
+scipy==1.17.1                    # WAV writing / DSP helpers
+
+# ——— Tools ———
+ddgs==9.14.4                     # DuckDuckGo search (search_web tool)
+duckduckgo_search==8.1.1         # DuckDuckGo search alternate binding
+
+# ——— Document / RAG ———
+pypdf==6.14.2                    # PDF reading for RAG knowledge base
+python-docx==1.2.0               # DOCX reading for RAG knowledge base
+
+# ——— LiveKit (agent.py only, NOT used by python_backend.py) ———
+livekit==1.1.13
+livekit-agents==1.6.7
+livekit-api==1.2.0
+livekit-plugins-google==1.6.7
+livekit-plugins-noise-cancellation==0.3.0
+livekit-plugins-openai==1.6.7
+livekit-plugins-silero==1.6.7

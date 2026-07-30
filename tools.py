@@ -29,12 +29,13 @@ _gemini_client = None
 RAG_DATABASE = []
 
 def get_gemini_client():
-    """Lazily construct the Gemini client. Only called when actually needed
-    (i.e. RAG_LLM_BACKEND == "online"), so offline mode never requires a
-    GEMINI_API_KEY to even import this module."""
+    """Lazily construct the Gemini client, checking for active API key variables."""
     global _gemini_client
     if _gemini_client is None:
-        _gemini_client = genai.Client()
+        key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        if not key:
+            raise ValueError("No GOOGLE_API_KEY or GEMINI_API_KEY found in environment variables.")
+        _gemini_client = genai.Client(api_key=key)
     return _gemini_client
 
 # Which LLM generates the final answer from retrieved RAG context.
@@ -54,8 +55,16 @@ def configure_rag_backend(mode: str, offline_model: Optional[str] = None):
     logging.info(f"RAG generation backend set to '{RAG_LLM_BACKEND}'"
                  + (f" (model: {OFFLINE_LLM_MODEL})" if mode == "offline" else " (Gemini)"))
 
+def get_ollama_client():
+    """Construct an Ollama client, checking for custom endpoint configurations."""
+    url = os.getenv("OLLAMA_URL", "").strip()
+    if url:
+        return ollama.Client(host=url)
+    return ollama.Client()
+
 def get_local_embedding(text):
-    response = ollama.embed(model=EMBED_MODEL, input=text)
+    client = get_ollama_client()
+    response = client.embed(model=EMBED_MODEL, input=text)
     return response["embeddings"][0]
 
 def cosine_similarity(a, b):

@@ -23,13 +23,20 @@ from scipy.io.wavfile import write
 from faster_whisper import WhisperModel
 from kokoro import KPipeline
 import ollama
+from google import genai as _genai
+from google.genai import types as _genai_types
 
 from prompts import AGENT_INSTRUCTION, SESSION_INSTRUCTION
 import tools
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - [FridayBackend] - %(levelname)s - %(message)s")
 
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:latest")
+# ——— LLM BACKEND CONFIGURATION ———
+# Priority: Gemini API (GOOGLE_API_KEY) → Remote/Local Ollama (OLLAMA_URL + OLLAMA_MODEL)
+GOOGLE_API_KEY   = os.getenv("GOOGLE_API_KEY", "").strip()
+OLLAMA_URL       = os.getenv("OLLAMA_URL", "").strip()   # e.g. http://192.168.1.50:11434
+OLLAMA_MODEL     = os.getenv("OLLAMA_MODEL", "llama3.1:latest")
+GEMINI_MODEL     = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
 # --- SPEECH SYSTEMS INITIALIZATION (PRE-WARMED IN RAM FOR ZERO DELAY) ---
 logging.info("Pre-warming Faster-Whisper STT model...")
@@ -69,9 +76,171 @@ OFFLINE_TOOL_GUARDRAIL = (
     "4. Respond strictly in character as Friday in ONE short spoken sentence."
 )
 
-# Initialize RAG Database on startup
+# ——— LLMBackend: dual-backend abstraction ———
+class LLMBackend:
+    """
+    Wraps Gemini API and Ollama behind a single chat interface.
+    Priority: Gemini (if GOOGLE_API_KEY set) → Ollama (remote or local).
+    STT (Whisper) and TTS (Kokoro) always run locally on this machine.
+    """
+
+    TOOL_SCHEMAS = [
+        {"type": "function", "function": {"name": "get_weather",           "description": "Get the current weather for a city.",                        "parameters": {"type": "object", "properties": {"city":     {"type": "string"}}, "required": ["city"]}}},
+        {"type": "function", "function": {"name": "search_web",            "description": "Search the live web for current information.",             "parameters": {"type": "object", "properties": {"query":    {"type": "string"}}, "required": ["query"]}}},
+        {"type": "function", "function": {"name": "query_knowledge_base",  "description": "Search local lecture notes and documents.",               "parameters": {"type": "object", "properties": {"query":    {"type": "string"}}, "required": ["query"]}}},
+        {"type": "function", "function": {"name": "send_email",            "description": "Send an email via SMTP.",                                  "parameters": {"type": "object", "properties": {"to_email": {"type": "string"}, "subject": {"type": "string"}, "message": {"type": "string"}, "cc_email": {"type": "string"}}, "required": ["to_email", "subject", "message"]}}},
+        {"type": "function", "function": {"name": "open_url",              "description": "Open a URL in the default browser.",                       "parameters": {"type": "object", "properties": {"url":      {"type": "string"}}, "required": ["url"]}}},
+        {"type": "function", "function": {"name": "open_app",              "description": "Launch a desktop application by name.",                   "parameters": {"type": "object", "properties": {"app_name": {"type": "string"}}, "required": ["app_name"]}}},
+    ]
+
+    def __init__(self):
+        self._gemini_client = None
+        self._ollama_client = None
+        self.active_backend = "none"
+        self._init_backends()
+
+    def _init_backends(self):
+        if GOOGLE_API_KEY:
+            try:
+                self._gemini_client = _genai.Client(api_key=GOOGLE_API_KEY)
+                self.active_backend = "gemini"
+                logging.info(f"[LLMBackend] Gemini API active (model: {GEMINI_MODEL})")
+            except Exception as e:
+                logging.warning(f"[LLMBackend] Gemini init failed: {e}. Will try Ollama.")
+
+        if self.active_backend != "gemini":
+            try:
+                host = OLLAMA_URL if OLLAMA_URL else None
+                self._ollama_client = ollama.Client(host=host) if host else ollama.Client()
+                self._ollama_client.list()  # connectivity probe
+                self.active_backend = "ollama"
+                endpoint = OLLAMA_URL or "localhost:11434"
+                logging.info(f"[LLMBackend] Ollama active at {endpoint} (model: {OLLAMA_MODEL})")
+            except Exception as e:
+                logging.error(f"[LLMBackend] Ollama init failed: {e}. No LLM backend available!")
+
+    # ——— Gemini path ———
+    def _gemini_chat(self, messages: list, use_tools: bool) -> dict:
+        """Send chat via Gemini. Returns {content, tool_name, tool_args} or raises."""
+        # Convert message history to Gemini format
+        system_msg = ""
+        contents = []
+        for m in messages:
+            role = m.get("role", "user")
+            text = m.get("content", "")
+            if role == "system":
+                system_msg = text
+                continue
+            g_role = "model" if role == "assistant" else "user"
+            contents.append(_genai_types.Content(
+                role=g_role,
+                parts=[_genai_types.Part.from_text(text=text)]
+            ))
+
+        config_kwargs = {
+            "system_instruction": system_msg,
+            "temperature": 0.4,
+            "max_output_tokens": 256,
+        }
+        if use_tools:
+            # Build Gemini function declarations from TOOL_SCHEMAS
+            fn_decls = []
+            for schema in self.TOOL_SCHEMAS:
+                f = schema["function"]
+                params = f.get("parameters", {})
+                fn_decls.append(_genai_types.FunctionDeclaration(
+                    name=f["name"],
+                    description=f["description"],
+                    parameters={
+                        "type": "object",
+                        "properties": {k: {"type": v["type"]} for k, v in params.get("properties", {}).items()},
+                        "required": params.get("required", [])
+                    }
+                ))
+            config_kwargs["tools"] = [_genai_types.Tool(function_declarations=fn_decls)]
+
+        response = self._gemini_client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=contents,
+            config=_genai_types.GenerateContentConfig(**config_kwargs)
+        )
+
+        # Check for function call
+        for candidate in response.candidates or []:
+            for part in (candidate.content.parts or []):
+                if part.function_call:
+                    fc = part.function_call
+                    return {"content": None, "tool_name": fc.name, "tool_args": dict(fc.args)}
+
+        return {"content": response.text.strip(), "tool_name": None, "tool_args": None}
+
+    # ——— Ollama path ———
+    def _ollama_chat(self, messages: list, use_tools: bool, temperature=0.4, max_tokens=48) -> dict:
+        """Send chat via Ollama. Returns {content, tool_name, tool_args} or raises."""
+        import re
+        kwargs = {
+            "model": OLLAMA_MODEL,
+            "messages": messages,
+            "options": {"temperature": temperature, "num_predict": max_tokens, "top_p": 0.9},
+            "keep_alive": "60m",
+        }
+        if use_tools:
+            kwargs["tools"] = self.TOOL_SCHEMAS
+
+        response = self._ollama_client.chat(**kwargs)
+        message  = response.get("message", {})
+        content  = message.get("content", "")
+
+        # Structured tool call
+        if message.get("tool_calls"):
+            tc = message["tool_calls"][0]
+            return {"content": None, "tool_name": tc["function"]["name"], "tool_args": tc["function"]["arguments"]}
+
+        # Inline JSON fallback (Llama 3 sometimes outputs tool calls as text)
+        if "{" in content and "}" in content:
+            match = re.search(r'(\{\s*"name"\s*:\s*"[^"]+".*?\})', content, re.DOTALL)
+            if match:
+                try:
+                    parsed = json.loads(match.group(1))
+                    t_name = parsed.get("name")
+                    t_args = parsed.get("parameters", {})
+                    if t_name in AVAILABLE_PYTHON_TOOLS:
+                        logging.info(f"[LLMBackend] Extracted inline JSON tool call: {t_name}")
+                        return {"content": None, "tool_name": t_name, "tool_args": t_args}
+                except Exception:
+                    pass
+
+        return {"content": content.strip(), "tool_name": None, "tool_args": None}
+
+    # ——— Unified dispatch ———
+    def chat(self, messages: list, use_tools: bool, temperature=0.4, max_tokens=48) -> dict:
+        """Route to active backend. Returns {content, tool_name, tool_args}."""
+        if self.active_backend == "gemini":
+            try:
+                return self._gemini_chat(messages, use_tools)
+            except Exception as e:
+                logging.warning(f"[LLMBackend] Gemini call failed ({e}), falling back to Ollama.")
+                if self._ollama_client is None:
+                    host = OLLAMA_URL if OLLAMA_URL else None
+                    self._ollama_client = ollama.Client(host=host) if host else ollama.Client()
+                return self._ollama_chat(messages, use_tools, temperature, max_tokens)
+
+        if self.active_backend == "ollama":
+            return self._ollama_chat(messages, use_tools, temperature, max_tokens)
+
+        raise RuntimeError("No LLM backend is available. Set GOOGLE_API_KEY or OLLAMA_URL.")
+
+# Singleton backend instance
+llm = LLMBackend()
+
+# Initialize RAG Database on startup — RAG uses Gemini if available, else Ollama
 try:
-    tools.configure_rag_backend("offline", offline_model=OLLAMA_MODEL)
+    rag_mode = "online" if GOOGLE_API_KEY else "offline"
+    tools.configure_rag_backend(rag_mode, offline_model=OLLAMA_MODEL)
+    # Also point the RAG ollama.chat calls to the remote endpoint
+    if OLLAMA_URL:
+        import os as _os
+        _os.environ.setdefault("OLLAMA_URL", OLLAMA_URL)
     tools.initialize_rag_database()
 except Exception as e:
     logging.error(f"Error initializing RAG database: {e}")
@@ -260,7 +429,7 @@ def should_pass_tools(user_text: str) -> bool:
 async def process_chat(history: list):
     system_content = AGENT_INSTRUCTION + OFFLINE_TOOL_GUARDRAIL
     formatted_messages = [{"role": "system", "content": system_content}]
-    
+
     last_user_msg = ""
     for msg in history:
         role = msg.get("role")
@@ -271,110 +440,74 @@ async def process_chat(history: list):
                 last_user_msg = content
 
     use_tools = should_pass_tools(last_user_msg)
-
-    # Ollama tool schemas defined inline (avoids LiveKit @function_tool decorator issues)
-    OLLAMA_TOOL_SCHEMAS = [
-        {"type": "function", "function": {"name": "get_weather", "description": "Get the current weather for a city.", "parameters": {"type": "object", "properties": {"city": {"type": "string", "description": "City name"}}, "required": ["city"]}}},
-        {"type": "function", "function": {"name": "search_web", "description": "Search the live web for current information.", "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "Search query"}}, "required": ["query"]}}},
-        {"type": "function", "function": {"name": "query_knowledge_base", "description": "Search local lecture notes and documents.", "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "Search query"}}, "required": ["query"]}}},
-        {"type": "function", "function": {"name": "send_email", "description": "Send an email.", "parameters": {"type": "object", "properties": {"to_email": {"type": "string"}, "subject": {"type": "string"}, "message": {"type": "string"}, "cc_email": {"type": "string"}}, "required": ["to_email", "subject", "message"]}}},
-        {"type": "function", "function": {"name": "open_url", "description": "Open a URL in the default web browser.", "parameters": {"type": "object", "properties": {"url": {"type": "string", "description": "Full URL including https://"}}, "required": ["url"]}}},
-        {"type": "function", "function": {"name": "open_app", "description": "Launch a macOS application by name (e.g. Safari, Spotify, VSCode, Chrome, Terminal).", "parameters": {"type": "object", "properties": {"app_name": {"type": "string", "description": "Application name as it appears in /Applications"}}, "required": ["app_name"]}}},
-    ]
-
-    ollama_tools = OLLAMA_TOOL_SCHEMAS if use_tools else None
-
     executed_tools = []
-    
+    backend = llm.active_backend
+
     try:
-        logging.info(f"Sending chat request to Ollama (use_tools={use_tools})...")
-        chat_kwargs = {
-            "model": OLLAMA_MODEL,
-            "messages": formatted_messages,
-            "options": {"temperature": 0.4, "num_predict": 48, "top_p": 0.9},
-            "keep_alive": "60m"
-        }
-        if use_tools:
-            chat_kwargs["tools"] = ollama_tools
+        logging.info(f"[{backend.upper()}] Sending chat (use_tools={use_tools})...")
+        result = llm.chat(formatted_messages, use_tools=use_tools, temperature=0.4, max_tokens=96)
 
-        response = ollama.chat(**chat_kwargs)
-        
-        message = response.get("message", {})
-        
-        # Extract inline JSON tool calls if Ollama outputted tool calls in the content text (Llama 3 fallback)
-        content_text = message.get("content", "")
-        if not message.get("tool_calls") and "{" in content_text and "}" in content_text:
-            import re
-            json_match = re.search(r'(\{\s*"name"\s*:\s*"[^"]+".*?\})', content_text, re.DOTALL)
-            if json_match:
-                try:
-                    parsed_tc = json.loads(json_match.group(1))
-                    t_name = parsed_tc.get("name")
-                    t_params = parsed_tc.get("parameters", {})
-                    if t_name in AVAILABLE_PYTHON_TOOLS:
-                        message["tool_calls"] = [{"function": {"name": t_name, "arguments": t_params}}]
-                        logging.info(f"Extracted inline JSON tool call: {t_name}({t_params})")
-                except Exception as e:
-                    logging.warning(f"Failed to parse inline JSON tool call: {e}")
+        # ——— Tool call detected ———
+        if result["tool_name"]:
+            function_name = result["tool_name"]
+            arguments     = result["tool_args"] or {}
+            logging.info(f"Executing tool call: {function_name}({arguments})")
+            executed_tools.append({"tool": function_name, "args": arguments})
 
-        if message.get("tool_calls"):
-            for tool_call in message["tool_calls"]:
-                function_name = tool_call["function"]["name"]
-                arguments = tool_call["function"]["arguments"]
-                logging.info(f"Executing tool call: {function_name}({arguments})")
-                executed_tools.append({"tool": function_name, "args": arguments})
-                
-                tool_result = await execute_tool(function_name, arguments)
-                logging.info(f"Tool result: {tool_result}")
-                
-                # Build the follow-up conversation with the tool result as a user message
-                # so the model is forced to actually answer the question.
-                formatted_messages.append(message)
-                formatted_messages.append({
-                    "role": "tool",
-                    "content": str(tool_result),
-                    "name": function_name
-                })
-                # Inject a user follow-up that forces the model to state the data
-                formatted_messages.append({
-                    "role": "user",
-                    "content": f"The tool returned this data: {tool_result}. Now tell me this exact information concisely. Do NOT say 'Will do' or 'I have retrieved'. Just state the actual result."
-                })
-                
-                final_res = ollama.chat(
-                    model=OLLAMA_MODEL,
-                    messages=formatted_messages,
-                    options={"temperature": 0.2, "num_predict": 128, "top_p": 0.9},
-                    keep_alive="60m"
-                )
-                raw_final = final_res.get("message", {}).get("content", "").strip()
-                logging.info(f"Post-tool model response: {raw_final}")
-                
-                # Safety net: if model still gives a generic dodge, build the reply directly
-                dodge_phrases = ["will do", "i have retrieved", "i have obtained", "i have accessed", "i've retrieved", "i'll look into"]
-                if not raw_final or any(p in raw_final.lower() for p in dodge_phrases):
-                    logging.warning("Model dodged tool result, using direct tool_result as reply")
-                    raw_final = str(tool_result)
+            tool_result = await execute_tool(function_name, arguments)
+            logging.info(f"Tool result: {tool_result}")
 
-                final_text = clean_friday_response(raw_final)
+            # open_url / open_app are fire-and-forget — confirm immediately
+            if function_name in ("open_url", "open_app"):
                 return {
-                    "content": final_text,
+                    "content": clean_friday_response(str(tool_result)),
                     "tool_calls": executed_tools,
-                    "tool_result": str(tool_result)
+                    "tool_result": str(tool_result),
                 }
 
-        content = clean_friday_response(message.get("content", ""))
+            # For data-returning tools: force the model to state the result
+            formatted_messages.append({"role": "assistant", "content": f"[called {function_name}]"})
+            formatted_messages.append({"role": "tool",      "content": str(tool_result), "name": function_name})
+            formatted_messages.append({
+                "role": "user",
+                "content": (
+                    f"The {function_name} tool returned: {tool_result}. "
+                    "State this result directly and concisely in ONE sentence as Friday. "
+                    "Do NOT say 'Will do', 'I have retrieved', or any meta-commentary."
+                )
+            })
+
+            logging.info(f"[{backend.upper()}] Sending post-tool follow-up...")
+            follow_up = llm.chat(formatted_messages, use_tools=False, temperature=0.2, max_tokens=256)
+            raw_final = (follow_up["content"] or "").strip()
+            logging.info(f"Post-tool response: {raw_final}")
+
+            # Safety net: model still dodging → use raw tool result
+            dodge_phrases = ["will do", "i have retrieved", "i have obtained",
+                             "i have accessed", "i've retrieved", "i'll look into"]
+            if not raw_final or any(p in raw_final.lower() for p in dodge_phrases):
+                logging.warning("Model dodged tool result — using raw tool output.")
+                raw_final = str(tool_result)
+
+            return {
+                "content": clean_friday_response(raw_final),
+                "tool_calls": executed_tools,
+                "tool_result": str(tool_result),
+            }
+
+        # ——— Plain conversational reply ———
         return {
-            "content": content,
+            "content": clean_friday_response(result["content"] or ""),
             "tool_calls": [],
-            "tool_result": None
+            "tool_result": None,
         }
+
     except Exception as e:
         logging.error(f"Chat execution error: {e}")
         return {
             "content": f"My apologies, Sir. An error occurred in my core backend: {str(e)}",
             "error": str(e),
-            "tool_calls": []
+            "tool_calls": [],
         }
 
 class FridayHandler(BaseHTTPRequestHandler):
@@ -396,9 +529,11 @@ class FridayHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({
                 "status": "ok",
                 "agent": "Friday",
-                "model": OLLAMA_MODEL,
-                "stt": "faster-whisper",
-                "tts": "kokoro"
+                "llm_backend": llm.active_backend,
+                "model": GEMINI_MODEL if llm.active_backend == "gemini" else OLLAMA_MODEL,
+                "ollama_endpoint": OLLAMA_URL or "localhost:11434",
+                "stt": "faster-whisper (local)",
+                "tts": "kokoro (local)"
             }).encode("utf-8"))
         elif parsed_path == "/tools":
             self._set_headers(200)
