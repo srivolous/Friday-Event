@@ -1,0 +1,168 @@
+@import "./styles-base.css";
+
+/* ——— MARK identity + status readout (top-right, mirrors ULTRON's title top-left) ——— */
+.hud-title {
+  -webkit-app-region: drag;
+}
+
+.hud-status {
+  top: 24px;
+  right: 24px;
+  text-align: right;
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  line-height: 1.8;
+}
+
+.hud-status .status-line {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #002244;
+  box-shadow: 0 0 6px rgba(0, 240, 255, 0.3);
+}
+
+.dot.ok { background: #00f0ff; box-shadow: 0 0 8px rgba(0, 240, 255, 0.9); }
+.dot.busy { background: #80d8ff; animation: pulse 0.9s ease-in-out infinite; }
+.dot.error { background: #ff3366; box-shadow: 0 0 8px rgba(255, 51, 102, 0.9); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* ——— Transcript panel (bottom-left area, above the hint text) ——— */
+.hud-transcript {
+  bottom: 96px;
+  left: 24px;
+  width: min(480px, 42vw);
+  max-height: 38vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-right: 6px;
+  pointer-events: none;
+}
+
+.hud-transcript::-webkit-scrollbar { width: 4px; }
+.hud-transcript::-webkit-scrollbar-thumb { background: rgba(0, 240, 255, 0.3); }
+
+.msg {
+  font-size: 12px;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  padding: 6px 10px;
+  border-left: 2px solid rgba(0, 240, 255, 0.4);
+  background: rgba(0, 16, 32, 0.35);
+  opacity: 0.9;
+  text-shadow: 0 0 6px rgba(0, 240, 255, 0.4);
+}
+
+.msg.user {
+  border-left-color: rgba(120, 200, 255, 0.5);
+  color: #bfe3ff;
+  text-shadow: 0 0 6px rgba(120, 200, 255, 0.4);
+}
+
+.msg.tool {
+  border-left-color: rgba(150, 255, 150, 0.35);
+  color: #b7ffb7;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+/* ——— Mic / push-to-talk control (bottom-center) ——— */
+.hud-mic {
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.mic-btn {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, rgba(128, 216, 255, 0.25), rgba(0, 20, 40, 0.6));
+  border: 1px solid rgba(0, 240, 255, 0.55);
+  color: #00f0ff;
+  font-size: 22px;
+  cursor: pointer;
+  box-shadow: 0 0 18px rgba(2, 136, 209, 0.2);
+  transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.mic-btn:hover {
+  border-color: #80d8ff;
+  box-shadow: 0 0 22px rgba(0, 240, 255, 0.4);
+}
+
+.mic-btn:active {
+  transform: scale(0.96);
+}
+
+.mic-btn.listening {
+  border-color: #ff3366;
+  color: #ff8866;
+  box-shadow: 0 0 26px rgba(255, 51, 102, 0.55);
+  animation: pulse 0.7s ease-in-out infinite;
+}
+
+.mic-btn.thinking {
+  border-color: #80d8ff;
+  animation: pulse 1.1s ease-in-out infinite;
+}
+
+.mic-label {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  opacity: 0.6;
+}
+
+/* ——— Text input fallback ——— */
+.hud-textbox {
+  bottom: 116px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  width: min(520px, 60vw);
+}
+
+.hud-textbox input {
+  flex: 1;
+  background: rgba(0, 16, 32, 0.55);
+  border: 1px solid rgba(0, 240, 255, 0.4);
+  color: #bfe3ff;
+  font-family: "Courier New", monospace;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  padding: 8px 10px;
+  border-radius: 4px;
+  outline: none;
+}
+
+.hud-textbox input:focus {
+  border-color: #80d8ff;
+}
+
+.hud-textbox button {
+  padding: 0 14px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 240, 255, 0.45);
+  background: rgba(0, 20, 40, 0.55);
+  color: #00f0ff;
+  font-family: "Courier New", monospace;
+  cursor: pointer;
+}

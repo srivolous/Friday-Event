@@ -1,0 +1,64 @@
+*› 
+╰─➤  python agent.py console --mode offline
+Booting Jarvis in system configuration mode: OFFLINE
+Initializing Jarvis offline databases...
+2026-07-28 20:03:32,000 - INFO - HTTP Request: GET https://huggingface.co/api/models/Systran/faster-whisper-base.en/revision/main "HTTP/1.1 200 OK"
+2026-07-28 20:03:32,214 - INFO - RAG generation backend set to 'offline' (model: llama3.1:latest)
+Loading RAG database index partitions into memory...
+RAG operational. Indexed 40 contextual fragments.
+
+Jarvis Online (OFFLINE MODE). Awaiting input, Sir. (Ctrl+C to power down)
+
+Listening...
+Processing voice command...
+2026-07-28 20:03:39,530 - INFO - Processing audio with duration 00:05.611
+User: Hello, Jarvis. I just wanted to check in on you.
+2026-07-28 20:03:51,151 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+
+Running local offline tool [query_knowledge_base]...
+2026-07-28 20:03:52,433 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/embed "HTTP/1.1 200 OK"
+2026-07-28 20:03:56,533 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+Jarvis: The instructor, Jeffing Johnson, is an Assistant Professor from the Department of Mechanical Engineering at the Brad Jagerie School of Engineering and Technology.
+
+
+Listening...
+Processing voice command...
+2026-07-28 20:04:27,362 - INFO - Processing audio with duration 00:20.294
+User: But I didn't even ask you for that.
+2026-07-28 20:04:31,396 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+
+Running local offline tool [query_knowledge_base]...
+2026-07-28 20:04:31,438 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/embed "HTTP/1.1 200 OK"
+Jarvis: Based on a scan of the system registers, no relevant information was found in your documents, sir.
+
+
+Listening...
+Processing voice command...
+2026-07-28 20:04:49,839 - INFO - Processing audio with duration 00:09.426
+User: We're going to do that.
+2026-07-28 20:04:54,285 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+
+Running local offline tool [query_knowledge_base]...
+2026-07-28 20:04:54,615 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/embed "HTTP/1.1 200 OK"
+2026-07-28 20:04:58,779 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+Jarvis: The text discusses safety management in a plant, highlighting the importance of preventing accidents by reducing hazards and promoting safe working conditions.
+
+
+Listening...
+Processing voice command...
+2026-07-28 20:05:14,994 - INFO - Processing audio with duration 00:05.616
+User: That is great, but I didn't really ask you anything about that.
+2026-07-28 20:05:18,727 - INFO - HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+
+Running local offline tool [search_web]...
+2026-07-28 20:05:27,532 - INFO - Error in engine wikipedia: TimeoutException(TimeoutError('error sending request for url (https://en.wikipedia.org/w/api.php?action=opensearch&profile=fuzzy&limit=1&search=The%20question%20was%20not%20answered) > operation timed out'))
+2026-07-28 20:05:27,532 - INFO - Error in engine grokipedia: TimeoutException(TimeoutError('error sending request for url (https://grokipedia.com/api/typeahead?query=The+question+was+not+answered&limit=1) > operation timed out'))
+2026-07-28 20:05:32,536 - INFO - Error in engine yandex: TimeoutException(TimeoutError('error sending request for url (https://yandex.com/search/site/?text=The+question+was+not+answered&web=1&searchid=2650533) > operation timed out'))
+2026-07-28 20:05:36,907 - INFO - response: https://www.google.com/search?q=The+question+was+not+answered&filter=1&start=0&hl=en-US&lr=lang_en&cr=countryUS 200
+2026-07-28 20:05:38,185 - INFO - response: https://search.brave.com/search?q=The+question+was+not+answered&source=web 200
+Jarvis: Question - Wikipedia: 1 day ago - Questions are sometimes distinguished from interrogatives, which are the grammatical forms, typically used to express them. Rhetorical questions, for instance, are interrogative in form but may not be considered bona fide questions, as they are not expected to be answered.
+What is the question that doesn't have an answer? - Quora: Answer (1 of 756): * How Does Turbulence Work? Everyone has gone through a flight where the pilot asks you to tighten your seat belts because of excessive turbulence, but even though it is so important to things like air safety, we just have no idea how it works. It has perplexed scientists to s...
+UNANSWERED definition and meaning | Collins English Dictionary: 1 month ago - Something such as a question or letter that is unanswered has not been answered. Some of the most important questions remain unanswered.
+Great Answer But, That Wasn't My Question: March 8, 2018 - People ask us questions and without fully understanding them, we happily proceed to answer. Sometimes these questions are objections and other times; the reverse may be true. The bad news is ... Our answer, while admirable, did not address the actual question.
+What should I do if no one answers my question? - Help Center - Stack Overflow: Bring the best of human thought and AI automation together at your work. Explore Stack Internal · First, make sure you’ve asked a good question. To get better answers, you may need to put additional effort into your question. Edit your question to provide status and progress updates.
+

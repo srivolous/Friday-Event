@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https://huggingface.co https://cdn-lfs.huggingface.co https://cdn.jsdelivr.net https://storage.googleapis.com; media-src 'self' blob:; connect-src 'self' http://127.0.0.1:11434 https://huggingface.co https://cdn-lfs.huggingface.co https://*.hf.co https://cdn.jsdelivr.net https://storage.googleapis.com https://html.duckduckgo.com https://wttr.in;" />
+    <title>MARK</title>
+    <script type="module" crossorigin src="./assets/index-D9htKlD7.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-CyQC3gtT.css">
+  </head>
+  <body>
+    <!-- Orb mount point: populated by orb/orbScene.ts (ported from ultron-by-sagar-builds) -->
+    <div id="orb-root" class="orb-root"></div>
+
+    <div class="overlay-vignette"></div>
+    <div class="overlay-grain"></div>
+    <div class="overlay-scanlines"></div>
+
+    <div class="hud hud-title">M.A.R.K.</div>
+
+    <div class="hud hud-status">
+      <div class="status-line"><span id="dot-llm" class="dot"></span> LLM: <span id="llm-state">checking…</span></div>
+      <div class="status-line"><span id="dot-mic" class="dot"></span> MIC: <span id="mic-state">idle</span></div>
+    </div>
+
+    <div class="hud hud-transcript" id="transcript"></div>
+
+    <div class="hud hud-hint">
+      <div><span class="key">DRAG</span> spin&nbsp;&nbsp;<span class="key">SCROLL</span> zoom&nbsp;&nbsp;<span class="key">G</span> hand gestures</div>
+      <div><span class="key">SPACE</span> hold to talk&nbsp;&nbsp;<span class="key">ENTER</span> focus text</div>
+    </div>
+
+    <div class="hud hud-controls">
+      <div class="camera-panel" id="camera-panel">
+        <video id="camera-video" muted playsinline class="camera-video"></video>
+        <canvas id="camera-overlay" width="208" height="156" class="camera-overlay"></canvas>
+        <div class="camera-status" id="camera-status">SHOW HANDS</div>
+      </div>
+      <div class="hud-row">
+        <button type="button" class="hud-btn" id="btn-mode">MODE: PTT</button>
+        <button type="button" class="hud-btn" id="btn-gestures">GESTURES OFF</button>
+        <button type="button" class="hud-btn" id="btn-pause-orb">ORB: ON</button>
+      </div>
+      <div class="hud-row">
+        <button type="button" class="hud-btn" id="btn-zoom-in" aria-label="Zoom in">+</button>
+        <button type="button" class="hud-btn" id="btn-zoom-out" aria-label="Zoom out">−</button>
+        <button type="button" class="hud-btn" id="btn-reset">RESET</button>
+      </div>
+    </div>
+
+    <div class="hud hud-textbox">
+      <input id="text-input" type="text" placeholder="…or type to MARK" autocomplete="off" />
+      <button type="button" id="btn-send">SEND</button>
+    </div>
+
+    <div class="hud hud-mic">
+      <button type="button" class="mic-btn" id="mic-btn">🎙</button>
+      <div class="mic-label" id="mic-label">HOLD TO TALK</div>
+    </div>
+
+  </body>
+</html>

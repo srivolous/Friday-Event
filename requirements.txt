@@ -1,0 +1,17 @@
+livekit-plugins-openai
+livekit-plugins-sileromem0ai
+langchain_community
+python-dotenv
+requests
+livekit-agents
+livekit-plugins-google
+livekit-plugins-noise-cancellation
+ollama
+faster-whisper
+sounddevice
+soundfile
+scipy
+numpy
+pypdf
+python-docx
+duckduckgo-search
