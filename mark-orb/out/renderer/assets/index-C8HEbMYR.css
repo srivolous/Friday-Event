@@ -400,3 +400,41 @@ body {
   font-family: "Courier New", monospace;
   cursor: pointer;
 }
+
+/* ——— Earth Mode ——— */
+.hud-location {
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  line-height: 1.7;
+  pointer-events: none;
+  display: none;
+}
+
+.hud-location #location-name {
+  color: #ffffff;
+  text-shadow: 0 0 12px rgba(255, 255, 255, 0.7), 0 0 24px rgba(128, 216, 255, 0.5);
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.hud-location #location-coords {
+  color: rgba(128, 216, 255, 0.75);
+  font-size: 10px;
+  letter-spacing: 0.25em;
+  text-shadow: 0 0 8px rgba(128, 216, 255, 0.5);
+}
+
+.hud-location.earth-active {
+  display: block;
+}
+
+#btn-earth.earth-active {
+  background: rgba(0, 80, 40, 0.7);
+  border-color: #69f0ae;
+  color: #69f0ae;
+  text-shadow: 0 0 6px rgba(105, 240, 174, 0.8);
+}

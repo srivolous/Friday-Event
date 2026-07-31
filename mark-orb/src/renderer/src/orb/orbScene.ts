@@ -21,6 +21,10 @@ export interface OrbSceneApi {
   isPaused(): boolean;
   /** Switch visual theme for Live Listen mode (Electric Cyan vs Amber/Orange). */
   setLiveListenMode(active: boolean): void;
+  /** Switch to Earth Mode — replaces orb with spinning planet Earth. */
+  setEarthMode(active: boolean): void;
+  /** Returns the lat/lon of the geographic point currently at screen centre (Earth Mode only). */
+  getViewCoordinates(): { lat: number; lon: number } | null;
 }
 
 const HOME_POSITION = new THREE.Vector3(0, 0.5, 5.5);
@@ -706,6 +710,198 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
   }
 
   // ═══════════════════════════════════════════════
+  // EARTH MODE — Photorealistic planet Earth
+  // ═══════════════════════════════════════════════
+  // IMPORTANT: declared HERE (before animate()) to avoid temporal dead zone crashes.
+  let isEarthMode = false;
+  const EARTH_RADIUS = 2.0;
+
+  const earthGeo = new THREE.SphereGeometry(EARTH_RADIUS, 64, 64);
+  const textureLoader = new THREE.TextureLoader();
+
+  // --- Procedural fallback: always shows immediately, no network needed ---
+  function makeProceduralEarth(): THREE.Texture {
+    const c = document.createElement("canvas");
+    c.width = 1024; c.height = 512;
+    const ctx = c.getContext("2d")!;
+    // Ocean gradient
+    const ocean = ctx.createLinearGradient(0, 0, 0, 512);
+    ocean.addColorStop(0,   "#0d2b5e");
+    ocean.addColorStop(0.3, "#1a4a8a");
+    ocean.addColorStop(0.5, "#1e5f99");
+    ocean.addColorStop(0.7, "#1a4a8a");
+    ocean.addColorStop(1,   "#0d2b5e");
+    ctx.fillStyle = ocean;
+    ctx.fillRect(0, 0, 1024, 512);
+    // Approximate land masses (simplified blobs)
+    ctx.fillStyle = "#2d6a2d";
+    // North America
+    ctx.beginPath(); ctx.ellipse(230, 180, 90, 80, -0.3, 0, Math.PI*2); ctx.fill();
+    // South America
+    ctx.beginPath(); ctx.ellipse(280, 310, 50, 80, 0.1, 0, Math.PI*2); ctx.fill();
+    // Europe + Africa
+    ctx.beginPath(); ctx.ellipse(510, 190, 60, 55, 0, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(515, 310, 55, 90, 0, 0, Math.PI*2); ctx.fill();
+    // Asia
+    ctx.beginPath(); ctx.ellipse(680, 175, 140, 80, 0, 0, Math.PI*2); ctx.fill();
+    // Australia
+    ctx.beginPath(); ctx.ellipse(760, 335, 65, 45, 0, 0, Math.PI*2); ctx.fill();
+    // Polar ice
+    ctx.fillStyle = "rgba(220,240,255,0.85)";
+    ctx.fillRect(0, 0, 1024, 35);
+    ctx.fillRect(0, 477, 1024, 35);
+    const tex = new THREE.CanvasTexture(c);
+    tex.needsUpdate = true;
+    return tex;
+  }
+
+  const earthMat = new THREE.MeshBasicMaterial({
+    map: makeProceduralEarth(),   // immediate visible fallback
+  });
+
+  // Load local high-resolution Earth textures (copied automatically to build output)
+  textureLoader.load(
+    "./earth_atmos_2048.jpg",
+    (tex) => { earthMat.map = tex; earthMat.needsUpdate = true; }
+  );
+  const earthSphere = new THREE.Mesh(earthGeo, earthMat);
+  earthSphere.visible = false;
+  scene.add(earthSphere);
+
+  const cloudGeo = new THREE.SphereGeometry(EARTH_RADIUS * 1.012, 64, 64);
+  const cloudMat = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0.0,     // completely hidden to avoid obscuring geography
+    depthWrite: false,
+  });
+  const cloudSphere = new THREE.Mesh(cloudGeo, cloudMat);
+  cloudSphere.visible = false;
+  scene.add(cloudSphere);
+
+  const atmosphereShader = {
+    uniforms: {
+      cameraPos: { value: camera.position },
+      glowColor:  { value: new THREE.Color(0x4fc3f7) },
+    },
+    vertexShader: `
+      varying vec3 vNormal;
+      varying vec3 vPosition;
+      void main() {
+        vNormal   = normalize(normalMatrix * normal);
+        vPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 cameraPos;
+      uniform vec3 glowColor;
+      varying vec3 vNormal;
+      varying vec3 vPosition;
+      void main() {
+        vec3 viewDir  = normalize(cameraPos - vPosition);
+        float rim     = 1.0 - dot(viewDir, vNormal);
+        float glow    = pow(clamp(rim, 0.0, 1.0), 2.8);
+        gl_FragColor  = vec4(glowColor, glow * 0.7);
+      }
+    `,
+  };
+  const atmosphereMat = new THREE.ShaderMaterial({
+    ...atmosphereShader,
+    side: THREE.FrontSide,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const atmosphereMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(EARTH_RADIUS * 1.08, 64, 64),
+    atmosphereMat
+  );
+  atmosphereMesh.visible = false;
+  scene.add(atmosphereMesh);
+
+  const sunLight = new THREE.DirectionalLight(0xfff5e8, 1.4);
+  sunLight.position.set(5, 3, 5);
+  scene.add(sunLight);
+  sunLight.visible = false;
+  const ambientLight = new THREE.AmbientLight(0x111122, 0.6);
+  scene.add(ambientLight);
+  ambientLight.visible = false;
+
+  const crosshairCanvas = document.createElement("canvas");
+  crosshairCanvas.width = crosshairCanvas.height = 64;
+  const cCtx = crosshairCanvas.getContext("2d")!;
+  cCtx.beginPath();
+  cCtx.arc(32, 32, 10, 0, Math.PI * 2);
+  cCtx.strokeStyle = "rgba(255,80,80,0.9)";
+  cCtx.lineWidth = 3;
+  cCtx.stroke();
+  cCtx.beginPath(); cCtx.moveTo(32,18); cCtx.lineTo(32,12);
+  cCtx.beginPath(); cCtx.moveTo(32,46); cCtx.lineTo(32,52);
+  cCtx.beginPath(); cCtx.moveTo(18,32); cCtx.lineTo(12,32);
+  cCtx.beginPath(); cCtx.moveTo(46,32); cCtx.lineTo(52,32);
+  cCtx.strokeStyle = "rgba(255,80,80,0.7)";
+  cCtx.lineWidth = 2;
+  cCtx.stroke();
+  const crosshairTex = new THREE.CanvasTexture(crosshairCanvas);
+  const crosshairMat = new THREE.SpriteMaterial({
+    map: crosshairTex,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.NormalBlending,
+  });
+  const crosshairSprite = new THREE.Sprite(crosshairMat);
+  crosshairSprite.scale.set(0.18, 0.18, 1);
+  crosshairSprite.visible = false;
+  scene.add(crosshairSprite);
+
+  const starGeo = new THREE.BufferGeometry();
+  const starPos = new Float32Array(3000 * 3);
+  for (let i = 0; i < 3000; i++) {
+    const r = 80 + Math.random() * 120;
+    const th = Math.random() * Math.PI * 2;
+    const ph = Math.acos(2 * Math.random() - 1);
+    starPos[i*3]   = r * Math.sin(ph) * Math.cos(th);
+    starPos[i*3+1] = r * Math.cos(ph);
+    starPos[i*3+2] = r * Math.sin(ph) * Math.sin(th);
+  }
+  starGeo.setAttribute("position", new THREE.Float32BufferAttribute(starPos, 3));
+  const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.25, sizeAttenuation: true });
+  const starField = new THREE.Points(starGeo, starMat);
+  starField.visible = false;
+  scene.add(starField);
+
+  function setEarthMode(active: boolean) {
+    isEarthMode = active;
+    orbGroup.visible      = !active;
+    earthSphere.visible   = active;
+    cloudSphere.visible   = false;      // strictly hidden
+    atmosphereMesh.visible  = false;    // strictly hidden to avoid glare
+    crosshairSprite.visible = active;
+    starField.visible     = active;
+    sunLight.visible      = false;      // not needed for MeshBasicMaterial
+    ambientLight.visible  = false;      // not needed for MeshBasicMaterial
+    if (active) {
+      const dir = camera.position.clone().normalize();
+      // Zoom out slightly more (scalar 7.5 instead of 6.5) for a better global view
+      camera.position.copy(dir.multiplyScalar(7.5));
+      controls.update();
+      bloom.strength = 0.0;             // disable bloom completely to prevent glare
+      chromaticPass.uniforms.uIntensity.value = 0.0;
+    } else {
+      bloom.strength = 1.8;
+      chromaticPass.uniforms.uIntensity.value = 0.003;
+    }
+  }
+
+  function getViewCoordinates(): { lat: number; lon: number } | null {
+    if (!isEarthMode) return null;
+    const dir = camera.position.clone().normalize();
+    const lat = Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1)) * (180 / Math.PI);
+    const lon = Math.atan2(-dir.z, dir.x) * (180 / Math.PI);
+    return { lat, lon };
+  }
+
+  // ═══════════════════════════════════════════════
   // ANIMATION
   // ═══════════════════════════════════════════════
   const clock = new THREE.Clock();
@@ -821,7 +1017,18 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
     }
 
     // Bloom pulse (base flicker + voice-reactive lift)
-    bloom.strength = 1.6 + Math.sin(t * 0.8) * 0.3 + energy * 0.9;
+    if (!isEarthMode) {
+      bloom.strength = 1.6 + Math.sin(t * 0.8) * 0.3 + energy * 0.9;
+    }
+
+    // Earth Mode animation
+    if (isEarthMode) {
+      // Disabled auto-rotation so geography stays stationary and easy to navigate.
+      // Move crosshair to the point on the globe facing the camera
+      const dir = camera.position.clone().normalize();
+      crosshairSprite.position.copy(dir.multiplyScalar(EARTH_RADIUS + 0.05));
+      bloom.strength = 0.0;
+    }
 
     // Update chromatic aberration time
     chromaticPass.uniforms.uTime.value = t;
@@ -894,5 +1101,7 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
     setPaused: (p: boolean) => { paused = p },
     isPaused: () => paused,
     setLiveListenMode,
+    setEarthMode,
+    getViewCoordinates,
   };
 }

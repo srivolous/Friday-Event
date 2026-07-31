@@ -19103,6 +19103,357 @@ class TetrahedronGeometry extends PolyhedronGeometry {
     return new TetrahedronGeometry(data.radius, data.detail);
   }
 }
+const Cache = {
+  enabled: false,
+  files: {},
+  add: function(key, file) {
+    if (this.enabled === false) return;
+    this.files[key] = file;
+  },
+  get: function(key) {
+    if (this.enabled === false) return;
+    return this.files[key];
+  },
+  remove: function(key) {
+    delete this.files[key];
+  },
+  clear: function() {
+    this.files = {};
+  }
+};
+class LoadingManager {
+  constructor(onLoad, onProgress, onError) {
+    const scope = this;
+    let isLoading = false;
+    let itemsLoaded = 0;
+    let itemsTotal = 0;
+    let urlModifier = void 0;
+    const handlers = [];
+    this.onStart = void 0;
+    this.onLoad = onLoad;
+    this.onProgress = onProgress;
+    this.onError = onError;
+    this.itemStart = function(url) {
+      itemsTotal++;
+      if (isLoading === false) {
+        if (scope.onStart !== void 0) {
+          scope.onStart(url, itemsLoaded, itemsTotal);
+        }
+      }
+      isLoading = true;
+    };
+    this.itemEnd = function(url) {
+      itemsLoaded++;
+      if (scope.onProgress !== void 0) {
+        scope.onProgress(url, itemsLoaded, itemsTotal);
+      }
+      if (itemsLoaded === itemsTotal) {
+        isLoading = false;
+        if (scope.onLoad !== void 0) {
+          scope.onLoad();
+        }
+      }
+    };
+    this.itemError = function(url) {
+      if (scope.onError !== void 0) {
+        scope.onError(url);
+      }
+    };
+    this.resolveURL = function(url) {
+      if (urlModifier) {
+        return urlModifier(url);
+      }
+      return url;
+    };
+    this.setURLModifier = function(transform) {
+      urlModifier = transform;
+      return this;
+    };
+    this.addHandler = function(regex, loader) {
+      handlers.push(regex, loader);
+      return this;
+    };
+    this.removeHandler = function(regex) {
+      const index = handlers.indexOf(regex);
+      if (index !== -1) {
+        handlers.splice(index, 2);
+      }
+      return this;
+    };
+    this.getHandler = function(file) {
+      for (let i2 = 0, l2 = handlers.length; i2 < l2; i2 += 2) {
+        const regex = handlers[i2];
+        const loader = handlers[i2 + 1];
+        if (regex.global) regex.lastIndex = 0;
+        if (regex.test(file)) {
+          return loader;
+        }
+      }
+      return null;
+    };
+  }
+}
+const DefaultLoadingManager = /* @__PURE__ */ new LoadingManager();
+class Loader {
+  constructor(manager) {
+    this.manager = manager !== void 0 ? manager : DefaultLoadingManager;
+    this.crossOrigin = "anonymous";
+    this.withCredentials = false;
+    this.path = "";
+    this.resourcePath = "";
+    this.requestHeader = {};
+  }
+  load() {
+  }
+  loadAsync(url, onProgress) {
+    const scope = this;
+    return new Promise(function(resolve, reject) {
+      scope.load(url, resolve, onProgress, reject);
+    });
+  }
+  parse() {
+  }
+  setCrossOrigin(crossOrigin) {
+    this.crossOrigin = crossOrigin;
+    return this;
+  }
+  setWithCredentials(value) {
+    this.withCredentials = value;
+    return this;
+  }
+  setPath(path) {
+    this.path = path;
+    return this;
+  }
+  setResourcePath(resourcePath) {
+    this.resourcePath = resourcePath;
+    return this;
+  }
+  setRequestHeader(requestHeader) {
+    this.requestHeader = requestHeader;
+    return this;
+  }
+}
+Loader.DEFAULT_MATERIAL_NAME = "__DEFAULT";
+class ImageLoader extends Loader {
+  constructor(manager) {
+    super(manager);
+  }
+  load(url, onLoad, onProgress, onError) {
+    if (this.path !== void 0) url = this.path + url;
+    url = this.manager.resolveURL(url);
+    const scope = this;
+    const cached = Cache.get(url);
+    if (cached !== void 0) {
+      scope.manager.itemStart(url);
+      setTimeout(function() {
+        if (onLoad) onLoad(cached);
+        scope.manager.itemEnd(url);
+      }, 0);
+      return cached;
+    }
+    const image = createElementNS("img");
+    function onImageLoad() {
+      removeEventListeners();
+      Cache.add(url, this);
+      if (onLoad) onLoad(this);
+      scope.manager.itemEnd(url);
+    }
+    function onImageError(event) {
+      removeEventListeners();
+      if (onError) onError(event);
+      scope.manager.itemError(url);
+      scope.manager.itemEnd(url);
+    }
+    function removeEventListeners() {
+      image.removeEventListener("load", onImageLoad, false);
+      image.removeEventListener("error", onImageError, false);
+    }
+    image.addEventListener("load", onImageLoad, false);
+    image.addEventListener("error", onImageError, false);
+    if (url.slice(0, 5) !== "data:") {
+      if (this.crossOrigin !== void 0) image.crossOrigin = this.crossOrigin;
+    }
+    scope.manager.itemStart(url);
+    image.src = url;
+    return image;
+  }
+}
+class TextureLoader extends Loader {
+  constructor(manager) {
+    super(manager);
+  }
+  load(url, onLoad, onProgress, onError) {
+    const texture = new Texture();
+    const loader = new ImageLoader(this.manager);
+    loader.setCrossOrigin(this.crossOrigin);
+    loader.setPath(this.path);
+    loader.load(url, function(image) {
+      texture.image = image;
+      texture.needsUpdate = true;
+      if (onLoad !== void 0) {
+        onLoad(texture);
+      }
+    }, onProgress, onError);
+    return texture;
+  }
+}
+class Light extends Object3D {
+  constructor(color, intensity = 1) {
+    super();
+    this.isLight = true;
+    this.type = "Light";
+    this.color = new Color(color);
+    this.intensity = intensity;
+  }
+  dispose() {
+  }
+  copy(source, recursive) {
+    super.copy(source, recursive);
+    this.color.copy(source.color);
+    this.intensity = source.intensity;
+    return this;
+  }
+  toJSON(meta) {
+    const data = super.toJSON(meta);
+    data.object.color = this.color.getHex();
+    data.object.intensity = this.intensity;
+    if (this.groundColor !== void 0) data.object.groundColor = this.groundColor.getHex();
+    if (this.distance !== void 0) data.object.distance = this.distance;
+    if (this.angle !== void 0) data.object.angle = this.angle;
+    if (this.decay !== void 0) data.object.decay = this.decay;
+    if (this.penumbra !== void 0) data.object.penumbra = this.penumbra;
+    if (this.shadow !== void 0) data.object.shadow = this.shadow.toJSON();
+    return data;
+  }
+}
+const _projScreenMatrix$1 = /* @__PURE__ */ new Matrix4();
+const _lightPositionWorld$1 = /* @__PURE__ */ new Vector3();
+const _lookTarget$1 = /* @__PURE__ */ new Vector3();
+class LightShadow {
+  constructor(camera) {
+    this.camera = camera;
+    this.bias = 0;
+    this.normalBias = 0;
+    this.radius = 1;
+    this.blurSamples = 8;
+    this.mapSize = new Vector2(512, 512);
+    this.map = null;
+    this.mapPass = null;
+    this.matrix = new Matrix4();
+    this.autoUpdate = true;
+    this.needsUpdate = false;
+    this._frustum = new Frustum();
+    this._frameExtents = new Vector2(1, 1);
+    this._viewportCount = 1;
+    this._viewports = [
+      new Vector4(0, 0, 1, 1)
+    ];
+  }
+  getViewportCount() {
+    return this._viewportCount;
+  }
+  getFrustum() {
+    return this._frustum;
+  }
+  updateMatrices(light) {
+    const shadowCamera = this.camera;
+    const shadowMatrix = this.matrix;
+    _lightPositionWorld$1.setFromMatrixPosition(light.matrixWorld);
+    shadowCamera.position.copy(_lightPositionWorld$1);
+    _lookTarget$1.setFromMatrixPosition(light.target.matrixWorld);
+    shadowCamera.lookAt(_lookTarget$1);
+    shadowCamera.updateMatrixWorld();
+    _projScreenMatrix$1.multiplyMatrices(shadowCamera.projectionMatrix, shadowCamera.matrixWorldInverse);
+    this._frustum.setFromProjectionMatrix(_projScreenMatrix$1);
+    shadowMatrix.set(
+      0.5,
+      0,
+      0,
+      0.5,
+      0,
+      0.5,
+      0,
+      0.5,
+      0,
+      0,
+      0.5,
+      0.5,
+      0,
+      0,
+      0,
+      1
+    );
+    shadowMatrix.multiply(_projScreenMatrix$1);
+  }
+  getViewport(viewportIndex) {
+    return this._viewports[viewportIndex];
+  }
+  getFrameExtents() {
+    return this._frameExtents;
+  }
+  dispose() {
+    if (this.map) {
+      this.map.dispose();
+    }
+    if (this.mapPass) {
+      this.mapPass.dispose();
+    }
+  }
+  copy(source) {
+    this.camera = source.camera.clone();
+    this.bias = source.bias;
+    this.radius = source.radius;
+    this.mapSize.copy(source.mapSize);
+    return this;
+  }
+  clone() {
+    return new this.constructor().copy(this);
+  }
+  toJSON() {
+    const object = {};
+    if (this.bias !== 0) object.bias = this.bias;
+    if (this.normalBias !== 0) object.normalBias = this.normalBias;
+    if (this.radius !== 1) object.radius = this.radius;
+    if (this.mapSize.x !== 512 || this.mapSize.y !== 512) object.mapSize = this.mapSize.toArray();
+    object.camera = this.camera.toJSON(false).object;
+    delete object.camera.matrix;
+    return object;
+  }
+}
+class DirectionalLightShadow extends LightShadow {
+  constructor() {
+    super(new OrthographicCamera(-5, 5, 5, -5, 0.5, 500));
+    this.isDirectionalLightShadow = true;
+  }
+}
+class DirectionalLight extends Light {
+  constructor(color, intensity) {
+    super(color, intensity);
+    this.isDirectionalLight = true;
+    this.type = "DirectionalLight";
+    this.position.copy(Object3D.DEFAULT_UP);
+    this.updateMatrix();
+    this.target = new Object3D();
+    this.shadow = new DirectionalLightShadow();
+  }
+  dispose() {
+    this.shadow.dispose();
+  }
+  copy(source) {
+    super.copy(source);
+    this.target = source.target.clone();
+    this.shadow = source.shadow.clone();
+    return this;
+  }
+}
+class AmbientLight extends Light {
+  constructor(color, intensity) {
+    super(color, intensity);
+    this.isAmbientLight = true;
+    this.type = "AmbientLight";
+  }
+}
 class Clock {
   constructor(autoStart = true) {
     this.autoStart = autoStart;
@@ -21163,6 +21514,197 @@ function createOrbScene(container) {
   function setEnergy(level) {
     energyTarget = MathUtils.clamp(level, 0, 1);
   }
+  let isEarthMode2 = false;
+  const EARTH_RADIUS = 2;
+  const earthGeo = new SphereGeometry(EARTH_RADIUS, 64, 64);
+  const textureLoader = new TextureLoader();
+  function makeProceduralEarth() {
+    const c2 = document.createElement("canvas");
+    c2.width = 1024;
+    c2.height = 512;
+    const ctx = c2.getContext("2d");
+    const ocean = ctx.createLinearGradient(0, 0, 0, 512);
+    ocean.addColorStop(0, "#0d2b5e");
+    ocean.addColorStop(0.3, "#1a4a8a");
+    ocean.addColorStop(0.5, "#1e5f99");
+    ocean.addColorStop(0.7, "#1a4a8a");
+    ocean.addColorStop(1, "#0d2b5e");
+    ctx.fillStyle = ocean;
+    ctx.fillRect(0, 0, 1024, 512);
+    ctx.fillStyle = "#2d6a2d";
+    ctx.beginPath();
+    ctx.ellipse(230, 180, 90, 80, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(280, 310, 50, 80, 0.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(510, 190, 60, 55, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(515, 310, 55, 90, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(680, 175, 140, 80, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(760, 335, 65, 45, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(220,240,255,0.85)";
+    ctx.fillRect(0, 0, 1024, 35);
+    ctx.fillRect(0, 477, 1024, 35);
+    const tex = new CanvasTexture(c2);
+    tex.needsUpdate = true;
+    return tex;
+  }
+  const earthMat = new MeshBasicMaterial({
+    map: makeProceduralEarth()
+    // immediate visible fallback
+  });
+  textureLoader.load(
+    "./earth_atmos_2048.jpg",
+    (tex) => {
+      earthMat.map = tex;
+      earthMat.needsUpdate = true;
+    }
+  );
+  const earthSphere = new Mesh(earthGeo, earthMat);
+  earthSphere.visible = false;
+  scene2.add(earthSphere);
+  const cloudGeo = new SphereGeometry(EARTH_RADIUS * 1.012, 64, 64);
+  const cloudMat = new MeshBasicMaterial({
+    transparent: true,
+    opacity: 0,
+    // completely hidden to avoid obscuring geography
+    depthWrite: false
+  });
+  const cloudSphere = new Mesh(cloudGeo, cloudMat);
+  cloudSphere.visible = false;
+  scene2.add(cloudSphere);
+  const atmosphereShader = {
+    uniforms: {
+      cameraPos: { value: camera.position },
+      glowColor: { value: new Color(5227511) }
+    },
+    vertexShader: `
+      varying vec3 vNormal;
+      varying vec3 vPosition;
+      void main() {
+        vNormal   = normalize(normalMatrix * normal);
+        vPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 cameraPos;
+      uniform vec3 glowColor;
+      varying vec3 vNormal;
+      varying vec3 vPosition;
+      void main() {
+        vec3 viewDir  = normalize(cameraPos - vPosition);
+        float rim     = 1.0 - dot(viewDir, vNormal);
+        float glow    = pow(clamp(rim, 0.0, 1.0), 2.8);
+        gl_FragColor  = vec4(glowColor, glow * 0.7);
+      }
+    `
+  };
+  const atmosphereMat = new ShaderMaterial({
+    ...atmosphereShader,
+    side: FrontSide,
+    transparent: true,
+    depthWrite: false,
+    blending: AdditiveBlending
+  });
+  const atmosphereMesh = new Mesh(
+    new SphereGeometry(EARTH_RADIUS * 1.08, 64, 64),
+    atmosphereMat
+  );
+  atmosphereMesh.visible = false;
+  scene2.add(atmosphereMesh);
+  const sunLight = new DirectionalLight(16774632, 1.4);
+  sunLight.position.set(5, 3, 5);
+  scene2.add(sunLight);
+  sunLight.visible = false;
+  const ambientLight = new AmbientLight(1118498, 0.6);
+  scene2.add(ambientLight);
+  ambientLight.visible = false;
+  const crosshairCanvas = document.createElement("canvas");
+  crosshairCanvas.width = crosshairCanvas.height = 64;
+  const cCtx = crosshairCanvas.getContext("2d");
+  cCtx.beginPath();
+  cCtx.arc(32, 32, 10, 0, Math.PI * 2);
+  cCtx.strokeStyle = "rgba(255,80,80,0.9)";
+  cCtx.lineWidth = 3;
+  cCtx.stroke();
+  cCtx.beginPath();
+  cCtx.moveTo(32, 18);
+  cCtx.lineTo(32, 12);
+  cCtx.beginPath();
+  cCtx.moveTo(32, 46);
+  cCtx.lineTo(32, 52);
+  cCtx.beginPath();
+  cCtx.moveTo(18, 32);
+  cCtx.lineTo(12, 32);
+  cCtx.beginPath();
+  cCtx.moveTo(46, 32);
+  cCtx.lineTo(52, 32);
+  cCtx.strokeStyle = "rgba(255,80,80,0.7)";
+  cCtx.lineWidth = 2;
+  cCtx.stroke();
+  const crosshairTex = new CanvasTexture(crosshairCanvas);
+  const crosshairMat = new SpriteMaterial({
+    map: crosshairTex,
+    transparent: true,
+    depthWrite: false,
+    blending: NormalBlending
+  });
+  const crosshairSprite = new Sprite(crosshairMat);
+  crosshairSprite.scale.set(0.18, 0.18, 1);
+  crosshairSprite.visible = false;
+  scene2.add(crosshairSprite);
+  const starGeo = new BufferGeometry();
+  const starPos = new Float32Array(3e3 * 3);
+  for (let i2 = 0; i2 < 3e3; i2++) {
+    const r2 = 80 + Math.random() * 120;
+    const th = Math.random() * Math.PI * 2;
+    const ph = Math.acos(2 * Math.random() - 1);
+    starPos[i2 * 3] = r2 * Math.sin(ph) * Math.cos(th);
+    starPos[i2 * 3 + 1] = r2 * Math.cos(ph);
+    starPos[i2 * 3 + 2] = r2 * Math.sin(ph) * Math.sin(th);
+  }
+  starGeo.setAttribute("position", new Float32BufferAttribute(starPos, 3));
+  const starMat = new PointsMaterial({ color: 16777215, size: 0.25, sizeAttenuation: true });
+  const starField = new Points(starGeo, starMat);
+  starField.visible = false;
+  scene2.add(starField);
+  function setEarthMode(active) {
+    isEarthMode2 = active;
+    orbGroup.visible = !active;
+    earthSphere.visible = active;
+    cloudSphere.visible = false;
+    atmosphereMesh.visible = false;
+    crosshairSprite.visible = active;
+    starField.visible = active;
+    sunLight.visible = false;
+    ambientLight.visible = false;
+    if (active) {
+      const dir = camera.position.clone().normalize();
+      camera.position.copy(dir.multiplyScalar(7.5));
+      controls.update();
+      bloom.strength = 0;
+      chromaticPass.uniforms.uIntensity.value = 0;
+    } else {
+      bloom.strength = 1.8;
+      chromaticPass.uniforms.uIntensity.value = 3e-3;
+    }
+  }
+  function getViewCoordinates() {
+    if (!isEarthMode2) return null;
+    const dir = camera.position.clone().normalize();
+    const lat = Math.asin(MathUtils.clamp(dir.y, -1, 1)) * (180 / Math.PI);
+    const lon = Math.atan2(-dir.z, dir.x) * (180 / Math.PI);
+    return { lat, lon };
+  }
   const clock = new Clock();
   let flickerTimer = 0;
   let rafId = 0;
@@ -21248,7 +21790,14 @@ function createOrbScene(container) {
         }
       });
     }
-    bloom.strength = 1.6 + Math.sin(t2 * 0.8) * 0.3 + energy * 0.9;
+    if (!isEarthMode2) {
+      bloom.strength = 1.6 + Math.sin(t2 * 0.8) * 0.3 + energy * 0.9;
+    }
+    if (isEarthMode2) {
+      const dir = camera.position.clone().normalize();
+      crosshairSprite.position.copy(dir.multiplyScalar(EARTH_RADIUS + 0.05));
+      bloom.strength = 0;
+    }
     chromaticPass.uniforms.uTime.value = t2;
     controls.update();
     composer.render();
@@ -21310,7 +21859,9 @@ function createOrbScene(container) {
       paused = p2;
     },
     isPaused: () => paused,
-    setLiveListenMode
+    setLiveListenMode,
+    setEarthMode,
+    getViewCoordinates
   };
 }
 var t = "undefined" != typeof self ? self : {};
@@ -25243,6 +25794,10 @@ const cameraOverlay = document.getElementById("camera-overlay");
 const cameraStatus = document.getElementById("camera-status");
 const btnPauseOrb = document.getElementById("btn-pause-orb");
 const btnMode = document.getElementById("btn-mode");
+const btnEarth = document.getElementById("btn-earth");
+const hudLocation = document.getElementById("hud-location");
+const locationName = document.getElementById("location-name");
+const locationCoords = document.getElementById("location-coords");
 const scene = createOrbScene(orbRoot);
 btnZoomIn.addEventListener("click", () => scene.zoomIn());
 btnZoomOut.addEventListener("click", () => scene.zoomOut());
@@ -25326,6 +25881,61 @@ function toggleMode() {
   }
 }
 if (btnMode) btnMode.addEventListener("click", toggleMode);
+let isEarthMode = false;
+let earthContext = null;
+let earthGeoInterval = null;
+async function reverseGeocode(lat, lon) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat.toFixed(5)}&lon=${lon.toFixed(5)}&format=json`;
+    const res = await fetch(url, { headers: { "User-Agent": "FridayJarvis/1.0" } });
+    const data = await res.json();
+    if (data && data.display_name) return data.display_name;
+  } catch (_2) {
+  }
+  return `${lat.toFixed(2)}°, ${lon.toFixed(2)}°`;
+}
+function toggleEarthMode() {
+  isEarthMode = !isEarthMode;
+  scene.setEarthMode(isEarthMode);
+  if (isEarthMode) {
+    if (btnEarth) {
+      btnEarth.classList.add("earth-active");
+    }
+    if (hudLocation) {
+      hudLocation.classList.add("earth-active");
+    }
+    if (btnEarth) btnEarth.textContent = "🌍 EARTH: ON";
+    earthGeoInterval = setInterval(async () => {
+      if (!isEarthMode || !scene) return;
+      const coords = scene.getViewCoordinates();
+      if (!coords) return;
+      const place = await reverseGeocode(coords.lat, coords.lon);
+      earthContext = { lat: coords.lat, lon: coords.lon, placeName: place };
+      if (locationName) {
+        const parts = place.split(",").map((p2) => p2.trim()).filter(Boolean);
+        locationName.textContent = parts[0] || "—";
+      }
+      if (locationCoords) {
+        locationCoords.textContent = `${Math.abs(coords.lat.toFixed(2))}°${coords.lat >= 0 ? "N" : "S"}  ${Math.abs(coords.lon.toFixed(2))}°${coords.lon >= 0 ? "E" : "W"}`;
+      }
+    }, 1800);
+  } else {
+    if (btnEarth) {
+      btnEarth.classList.remove("earth-active");
+    }
+    if (hudLocation) {
+      hudLocation.classList.remove("earth-active");
+    }
+    if (btnEarth) btnEarth.textContent = "🌍 EARTH";
+    clearInterval(earthGeoInterval);
+    earthGeoInterval = null;
+    earthContext = null;
+  }
+}
+if (btnEarth) btnEarth.addEventListener("click", toggleEarthMode);
+window.addEventListener("keydown", (e2) => {
+  if ((e2.key === "e" || e2.key === "E") && document.activeElement !== textInput) toggleEarthMode();
+});
 async function startLiveListen() {
   try {
     liveMicStream = await navigator.mediaDevices.getUserMedia({
@@ -25561,7 +26171,12 @@ async function handleUserTurn(userText) {
   }
   isUserSpeakingVad = false;
   addMessage("user", userText);
-  conversation.push({ role: "user", content: userText });
+  let msgToSend = userText;
+  if (isEarthMode && earthContext) {
+    const { lat, lon, placeName } = earthContext;
+    msgToSend = `[EARTH MODE] I am currently looking at the globe and viewing: "${placeName}" (latitude: ${lat.toFixed(4)}, longitude: ${lon.toFixed(4)}). With this location as context, please answer my question: ${userText}`;
+  }
+  conversation.push({ role: "user", content: msgToSend });
   setLlmStatus("busy", "Friday thinking…");
   try {
     const agentRes = await window.mark.agentChat({ messages: conversation });

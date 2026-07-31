@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https://huggingface.co https://cdn-lfs.huggingface.co https://cdn.jsdelivr.net https://storage.googleapis.com; media-src 'self' blob:; connect-src 'self' http://127.0.0.1:11434 https://huggingface.co https://cdn-lfs.huggingface.co https://*.hf.co https://cdn.jsdelivr.net https://storage.googleapis.com https://html.duckduckgo.com https://wttr.in;" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https://huggingface.co https://cdn-lfs.huggingface.co https://cdn.jsdelivr.net https://storage.googleapis.com https://eoimages.gsfc.nasa.gov; media-src 'self' blob:; connect-src 'self' http://127.0.0.1:11434 https://huggingface.co https://cdn-lfs.huggingface.co https://*.hf.co https://cdn.jsdelivr.net https://storage.googleapis.com https://html.duckduckgo.com https://wttr.in https://nominatim.openstreetmap.org;" />
     <title>MARK</title>
     <link rel="stylesheet" href="./src/styles-mark.css" />
   </head>
@@ -23,6 +23,12 @@
 
     <div class="hud hud-transcript" id="transcript"></div>
 
+    <!-- Earth Mode location overlay -->
+    <div class="hud hud-location" id="hud-location">
+      <div id="location-name">—</div>
+      <div id="location-coords"></div>
+    </div>
+
     <div class="hud hud-hint">
       <div><span class="key">DRAG</span> spin&nbsp;&nbsp;<span class="key">SCROLL</span> zoom&nbsp;&nbsp;<span class="key">G</span> hand gestures</div>
       <div><span class="key">SPACE</span> hold to talk&nbsp;&nbsp;<span class="key">ENTER</span> focus text</div>
@@ -38,6 +44,7 @@
         <button type="button" class="hud-btn" id="btn-mode">MODE: PTT</button>
         <button type="button" class="hud-btn" id="btn-gestures">GESTURES OFF</button>
         <button type="button" class="hud-btn" id="btn-pause-orb">ORB: ON</button>
+        <button type="button" class="hud-btn" id="btn-earth">🌍 EARTH</button>
       </div>
       <div class="hud-row">
         <button type="button" class="hud-btn" id="btn-zoom-in" aria-label="Zoom in">+</button>

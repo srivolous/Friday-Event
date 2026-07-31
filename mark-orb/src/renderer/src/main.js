@@ -26,6 +26,10 @@ const cameraStatus = document.getElementById('camera-status')
 
 const btnPauseOrb = document.getElementById('btn-pause-orb')
 const btnMode = document.getElementById('btn-mode')
+const btnEarth = document.getElementById('btn-earth')
+const hudLocation = document.getElementById('hud-location')
+const locationName = document.getElementById('location-name')
+const locationCoords = document.getElementById('location-coords')
 
 // ——— Orb scene ———
 const scene = createOrbScene(orbRoot)
@@ -119,6 +123,63 @@ function toggleMode() {
   }
 }
 if (btnMode) btnMode.addEventListener('click', toggleMode)
+
+// ——— Earth Mode ———
+let isEarthMode = false
+let earthContext = null   // { lat, lon, placeName }
+let earthGeoInterval = null
+
+async function reverseGeocode(lat, lon) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat.toFixed(5)}&lon=${lon.toFixed(5)}&format=json`
+    const res = await fetch(url, { headers: { 'User-Agent': 'FridayJarvis/1.0' } })
+    const data = await res.json()
+    if (data && data.display_name) return data.display_name
+  } catch (_) { /* silent fail */ }
+  return `${lat.toFixed(2)}°, ${lon.toFixed(2)}°`
+}
+
+function toggleEarthMode() {
+  isEarthMode = !isEarthMode
+  scene.setEarthMode(isEarthMode)
+
+  if (isEarthMode) {
+    if (btnEarth) { btnEarth.classList.add('earth-active') }
+    if (hudLocation) { hudLocation.classList.add('earth-active') }
+    if (btnEarth) btnEarth.textContent = '🌍 EARTH: ON'
+    // Stop Live Listen / PTT while in Earth Mode (not required, but avoids confusion)
+    // Start coordinate polling
+    earthGeoInterval = setInterval(async () => {
+      if (!isEarthMode || !scene) return
+      const coords = scene.getViewCoordinates()
+      if (!coords) return
+      const place = await reverseGeocode(coords.lat, coords.lon)
+      earthContext = { lat: coords.lat, lon: coords.lon, placeName: place }
+      if (locationName) {
+        // Show only first meaningful segment (city / country)
+        const parts = place.split(',').map(p => p.trim()).filter(Boolean)
+        locationName.textContent = parts[0] || '—'
+      }
+      if (locationCoords) {
+        locationCoords.textContent =
+          `${Math.abs(coords.lat.toFixed(2))}°${coords.lat >= 0 ? 'N' : 'S'}  ` +
+          `${Math.abs(coords.lon.toFixed(2))}°${coords.lon >= 0 ? 'E' : 'W'}`
+      }
+    }, 1800)
+  } else {
+    if (btnEarth) { btnEarth.classList.remove('earth-active') }
+    if (hudLocation) { hudLocation.classList.remove('earth-active') }
+    if (btnEarth) btnEarth.textContent = '🌍 EARTH'
+    clearInterval(earthGeoInterval)
+    earthGeoInterval = null
+    earthContext = null
+  }
+}
+if (btnEarth) btnEarth.addEventListener('click', toggleEarthMode)
+// Keyboard shortcut: E
+window.addEventListener('keydown', (e) => {
+  if ((e.key === 'e' || e.key === 'E') && document.activeElement !== textInput) toggleEarthMode()
+})
 
 async function startLiveListen() {
   try {
@@ -385,7 +446,17 @@ async function handleUserTurn(userText) {
   isUserSpeakingVad = false
 
   addMessage('user', userText)
-  conversation.push({ role: 'user', content: userText })
+
+  // Build messages with optional Earth Mode context injection
+  let msgToSend = userText
+  if (isEarthMode && earthContext) {
+    const { lat, lon, placeName } = earthContext
+    msgToSend = `[EARTH MODE] I am currently looking at the globe and viewing: "${placeName}" ` +
+      `(latitude: ${lat.toFixed(4)}, longitude: ${lon.toFixed(4)}). ` +
+      `With this location as context, please answer my question: ${userText}`
+  }
+
+  conversation.push({ role: 'user', content: msgToSend })
   setLlmStatus('busy', 'Friday thinking…')
 
   try {
