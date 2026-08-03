@@ -1,0 +1,26 @@
+[project]
+name = "friday-jarvis"
+version = "0.1.0"
+description = "Friday Jarvis Desktop Assistant Backend"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "ollama==0.6.2",
+    "google-genai==2.14.0",
+    "faster-whisper==1.2.1",
+    "kokoro==0.9.4",
+    "kokoro-onnx==0.5.0",
+    "sounddevice==0.5.5",
+    "soundfile==0.14.0",
+    "python-dotenv==1.2.2",
+    "requests==2.34.2",
+    "numpy>=1.24.0,<2.5.0",
+    "scipy==1.17.1",
+    "ddgs==9.14.4",
+    "duckduckgo_search==8.1.1",
+    "pypdf==6.14.2",
+    "python-docx==1.2.0",
+    "livekit==1.1.13",
+    "livekit-agents==1.6.7",
+    "livekit-api==1.2.0"
+]

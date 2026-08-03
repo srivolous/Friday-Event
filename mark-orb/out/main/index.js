@@ -232,16 +232,30 @@ function describeTools() {
 }
 const __dirname$1 = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname$1, "../../..");
-const pythonExec = path.join(rootDir, "venv", "bin", "python");
 const backendScript = path.join(rootDir, "python_backend.py");
 let mainWindow;
 let pythonProcess = null;
 function startPythonBackend() {
-  console.log(`Starting Friday Python backend: ${pythonExec} ${backendScript}`);
-  pythonProcess = spawn(pythonExec, [backendScript, "5001"], {
-    cwd: rootDir,
-    stdio: "inherit"
-  });
+  let useUv = false;
+  try {
+    execSync(process.platform === "win32" ? "where uv" : "which uv", { stdio: "ignore" });
+    useUv = true;
+  } catch (e) {
+  }
+  if (useUv) {
+    console.log(`Starting Friday Python backend via Astral uv: uv run python_backend.py 5001`);
+    pythonProcess = spawn("uv", ["run", backendScript, "5001"], {
+      cwd: rootDir,
+      stdio: "inherit"
+    });
+  } else {
+    const pythonExec = path.join(rootDir, "venv", "bin", "python");
+    console.log(`Starting Friday Python backend via legacy venv: ${pythonExec} ${backendScript}`);
+    pythonProcess = spawn(pythonExec, [backendScript, "5001"], {
+      cwd: rootDir,
+      stdio: "inherit"
+    });
+  }
   pythonProcess.on("error", (err) => {
     console.error("Failed to start Friday Python backend:", err);
   });

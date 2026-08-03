@@ -29,8 +29,8 @@
     "vite": "^5.2.11"
   },
   "build": {
-    "appId": "com.local.mark-orb",
-    "productName": "MARK",
+    "appId": "com.local.friday-jarvis",
+    "productName": "FRIDAY",
     "files": ["out/**/*"],
     "directories": { "buildResources": "build" }
   }

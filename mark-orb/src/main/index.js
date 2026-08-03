@@ -1,23 +1,40 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { spawn } from 'node:child_process'
+import { spawn, execSync } from 'node:child_process'
 import { runTool, describeTools } from './tools/index.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(__dirname, '../../..')
-const pythonExec = path.join(rootDir, 'venv', 'bin', 'python')
 const backendScript = path.join(rootDir, 'python_backend.py')
 
 let mainWindow
 let pythonProcess = null
 
 function startPythonBackend() {
-  console.log(`Starting Friday Python backend: ${pythonExec} ${backendScript}`)
-  pythonProcess = spawn(pythonExec, [backendScript, '5001'], {
-    cwd: rootDir,
-    stdio: 'inherit'
-  })
+  let useUv = false
+  try {
+    // Check if 'uv' is available on the system PATH
+    execSync(process.platform === 'win32' ? 'where uv' : 'which uv', { stdio: 'ignore' })
+    useUv = true
+  } catch (e) {
+    // uv not installed, fall back to legacy venv
+  }
+
+  if (useUv) {
+    console.log(`Starting Friday Python backend via Astral uv: uv run python_backend.py 5001`)
+    pythonProcess = spawn('uv', ['run', backendScript, '5001'], {
+      cwd: rootDir,
+      stdio: 'inherit'
+    })
+  } else {
+    const pythonExec = path.join(rootDir, 'venv', 'bin', 'python')
+    console.log(`Starting Friday Python backend via legacy venv: ${pythonExec} ${backendScript}`)
+    pythonProcess = spawn(pythonExec, [backendScript, '5001'], {
+      cwd: rootDir,
+      stdio: 'inherit'
+    })
+  }
 
   pythonProcess.on('error', (err) => {
     console.error('Failed to start Friday Python backend:', err)
