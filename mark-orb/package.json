@@ -8,6 +8,7 @@
   "author": "you",
   "license": "MIT",
   "scripts": {
+    "predev": "node fix-electron.js",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
