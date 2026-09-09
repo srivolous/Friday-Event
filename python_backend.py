@@ -15,7 +15,14 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 from dotenv import load_dotenv
-load_dotenv(os.path.join(BASE_DIR, ".env"))
+# Load .env: check ~/.config/friday/.env first, then project root
+_config_dir = os.path.join(os.path.expanduser("~"), ".config", "friday")
+_config_env = os.path.join(_config_dir, ".env")
+_project_env = os.path.join(BASE_DIR, ".env")
+if os.path.exists(_config_env):
+    load_dotenv(_config_env)
+elif os.path.exists(_project_env):
+    load_dotenv(_project_env)
 
 import numpy as np
 import sounddevice as sd
@@ -531,6 +538,8 @@ class FridayHandler(BaseHTTPRequestHandler):
                 "agent": "Friday",
                 "llm_backend": llm.active_backend,
                 "model": GEMINI_MODEL if llm.active_backend == "gemini" else OLLAMA_MODEL,
+                "embed_model": tools._get_active_embed_model(),
+                "rag_backend": tools.RAG_LLM_BACKEND,
                 "ollama_endpoint": OLLAMA_URL or "localhost:11434",
                 "stt": "faster-whisper (local)",
                 "tts": "kokoro (local)"

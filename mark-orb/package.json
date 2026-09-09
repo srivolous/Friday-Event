@@ -1,7 +1,7 @@
 {
-  "name": "mark-orb",
+  "name": "friday",
   "version": "0.1.0",
-  "description": "MARK — a local, voice-first desktop assistant. Ollama + Llama 3 brain, Ultron holographic orb UI, Mark-L style tool actions. Runs fully offline (no cloud LLM).",
+  "description": "F.R.I.D.A.Y. — AI Desktop Assistant with holographic orb UI. Supports Gemini (cloud) and Ollama (local) backends.",
   "private": true,
   "main": "./out/main/index.js",
   "type": "module",
@@ -12,7 +12,10 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "dist": "electron-vite build && electron-builder"
+    "dist": "electron-vite build && electron-builder",
+    "dist:win": "electron-vite build && electron-builder --win",
+    "dist:mac": "electron-vite build && electron-builder --mac",
+    "dist:linux": "electron-vite build && electron-builder --linux"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.14",
@@ -33,6 +36,20 @@
     "appId": "com.local.friday-jarvis",
     "productName": "FRIDAY",
     "files": ["out/**/*"],
-    "directories": { "buildResources": "build" }
+    "directories": { "buildResources": "build" },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "build/icon.icns",
+      "category": "public.app-category.utilities"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "icon": "build/icon.png",
+      "category": "Utility"
+    }
   }
 }

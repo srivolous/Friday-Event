@@ -1,5 +1,7 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import path from 'node:path'
+import os from 'node:os'
+import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { spawn, execSync } from 'node:child_process'
 import { runTool, describeTools } from './tools/index.js'
@@ -11,30 +13,55 @@ const backendScript = path.join(rootDir, 'python_backend.py')
 let mainWindow
 let pythonProcess = null
 
-function startPythonBackend() {
-  let useUv = false
+// ─── Python discovery: uv → .venv → venv → system ────────────────────────────
+function findPython() {
+  const isWin = process.platform === 'win32'
+
+  // 1. Try uv (preferred)
   try {
-    // Check if 'uv' is available on the system PATH
-    execSync(process.platform === 'win32' ? 'where uv' : 'which uv', { stdio: 'ignore' })
-    useUv = true
-  } catch (e) {
-    // uv not installed, fall back to legacy venv
+    execSync(isWin ? 'where uv' : 'which uv', { stdio: 'ignore' })
+    return { cmd: 'uv', args: ['run', backendScript, '5001'], cwd: rootDir }
+  } catch (_) {}
+
+  // 2. Try .venv (uv-managed)
+  const venvPy = path.join(rootDir, '.venv', 'bin', 'python')
+  const venvPyWin = path.join(rootDir, '.venv', 'Scripts', 'python.exe')
+  const py = isWin ? venvPyWin : venvPy
+  if (fs.existsSync(py)) {
+    return { cmd: py, args: [backendScript, '5001'], cwd: rootDir }
   }
 
-  if (useUv) {
-    console.log(`Starting Friday Python backend via Astral uv: uv run python_backend.py 5001`)
-    pythonProcess = spawn('uv', ['run', backendScript, '5001'], {
-      cwd: rootDir,
-      stdio: 'inherit'
-    })
-  } else {
-    const pythonExec = path.join(rootDir, 'venv', 'bin', 'python')
-    console.log(`Starting Friday Python backend via legacy venv: ${pythonExec} ${backendScript}`)
-    pythonProcess = spawn(pythonExec, [backendScript, '5001'], {
-      cwd: rootDir,
-      stdio: 'inherit'
-    })
+  // 3. Try legacy venv
+  const legacyPy = path.join(rootDir, 'venv', 'bin', 'python')
+  const legacyPyWin = path.join(rootDir, 'venv', 'Scripts', 'python.exe')
+  const lpy = isWin ? legacyPyWin : legacyPy
+  if (fs.existsSync(lpy)) {
+    return { cmd: lpy, args: [backendScript, '5001'], cwd: rootDir }
   }
+
+  // 4. System python3/python
+  for (const bin of ['python3', 'python']) {
+    try {
+      execSync(isWin ? `where ${bin}` : `which ${bin}`, { stdio: 'ignore' })
+      return { cmd: bin, args: [backendScript, '5001'], cwd: rootDir }
+    } catch (_) {}
+  }
+
+  return null
+}
+
+function startPythonBackend() {
+  const py = findPython()
+  if (!py) {
+    console.error('No Python found. Run setup.py or install Python 3.11+.')
+    return
+  }
+
+  console.log(`Starting Friday backend: ${py.cmd} ${py.args.join(' ')}`)
+  pythonProcess = spawn(py.cmd, py.args, {
+    cwd: py.cwd,
+    stdio: 'inherit'
+  })
 
   pythonProcess.on('error', (err) => {
     console.error('Failed to start Friday Python backend:', err)

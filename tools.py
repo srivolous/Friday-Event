@@ -18,8 +18,9 @@ from livekit.agents import function_tool
 # Resolve relative to this file's location, NOT the process's current working
 # directory (which can differ depending on how/where the agent is launched).
 FOLDER_PATH = str(Path(__file__).resolve().parent / "lectures")
-EMBED_MODEL = "mxbai-embed-large"
-CACHE_FILE = Path(".embeddings_cache_mxbai.json")
+GEMINI_EMBED_MODEL = "text-embedding-004"
+OLLAMA_EMBED_MODEL = "mxbai-embed-large"
+CACHE_FILE = Path(".embeddings_cache.json")
 TOP_K = 3
 SIMILARITY_THRESHOLD = 0.35
 
@@ -55,6 +56,11 @@ def configure_rag_backend(mode: str, offline_model: Optional[str] = None):
     logging.info(f"RAG generation backend set to '{RAG_LLM_BACKEND}'"
                  + (f" (model: {OFFLINE_LLM_MODEL})" if mode == "offline" else " (Gemini)"))
 
+def _get_active_embed_model():
+    """Return the name of the embedding model currently in use."""
+    key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+    return GEMINI_EMBED_MODEL if key else OLLAMA_EMBED_MODEL
+
 def get_ollama_client():
     """Construct an Ollama client, checking for custom endpoint configurations."""
     url = os.getenv("OLLAMA_URL", "").strip()
@@ -63,8 +69,20 @@ def get_ollama_client():
     return ollama.Client()
 
 def get_local_embedding(text):
+    """Generate an embedding vector for text. Gemini preferred, Ollama fallback."""
+    gemini_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+    if gemini_key:
+        try:
+            client = get_gemini_client()
+            result = client.models.embed_content(
+                model=GEMINI_EMBED_MODEL,
+                contents=text
+            )
+            return result.embeddings[0].values
+        except Exception as e:
+            logging.warning(f"Gemini embedding failed ({e}), falling back to Ollama.")
     client = get_ollama_client()
-    response = client.embed(model=EMBED_MODEL, input=text)
+    response = client.embed(model=OLLAMA_EMBED_MODEL, input=text)
     return response["embeddings"][0]
 
 def cosine_similarity(a, b):
@@ -73,12 +91,24 @@ def cosine_similarity(a, b):
 def load_cache():
     if CACHE_FILE.exists():
         try:
-            return json.loads(CACHE_FILE.read_text(encoding="utf-8"))
-        except:
+            raw = json.loads(CACHE_FILE.read_text(encoding="utf-8"))
+            # Invalidate cache if embedding model changed
+            cached_model = raw.get("_embed_model")
+            active_model = _get_active_embed_model()
+            if cached_model and cached_model != active_model:
+                logging.info(f"Embedding model changed ({cached_model} -> {active_model}), invalidating cache.")
+                return {}
+            return raw
+        except Exception:
             return {}
+    # Legacy cache migration: if old cache exists, start fresh
+    old_cache = Path(".embeddings_cache_mxbai.json")
+    if old_cache.exists():
+        logging.info("Old Ollama embeddings cache found; ignoring (model mismatch).")
     return {}
 
 def save_cache(cache):
+    cache["_embed_model"] = _get_active_embed_model()
     CACHE_FILE.write_text(json.dumps(cache), encoding="utf-8")
 
 def extract_pdf_text(path: Path) -> str:
@@ -207,20 +237,33 @@ async def query_knowledge_base(query: str) -> str:
         
         prompt = f"Context:\n{combined_context}\n\nQuestion: {query}\nAnswer strictly and exclusively using only the provided context. Keep your response down to one short sentence."
 
-        if RAG_LLM_BACKEND == "offline":
-            response = ollama.chat(
-                model=OFFLINE_LLM_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                options={"temperature": 0.0}
-            )
-            return response["message"]["content"]
+        if RAG_LLM_BACKEND == "online":
+            try:
+                response = get_gemini_client().models.generate_content(
+                    model="gemini-2.0-flash",
+                    contents=prompt,
+                    config=genai.types.GenerateContentConfig(temperature=0.0)
+                )
+                return response.text
+            except Exception as e:
+                logging.warning(f"Gemini RAG generation failed ({e}), trying Ollama fallback.")
+                try:
+                    response = ollama.chat(
+                        model=OFFLINE_LLM_MODEL,
+                        messages=[{"role": "user", "content": prompt}],
+                        options={"temperature": 0.0}
+                    )
+                    return response["message"]["content"]
+                except Exception:
+                    pass
+            return "An error occurred while generating a response from the knowledge base."
 
-        response = get_gemini_client().models.generate_content(
-            model="gemini-3.5-flash",
-            contents=prompt,
-            config=genai.types.GenerateContentConfig(temperature=0.0)
+        response = ollama.chat(
+            model=OFFLINE_LLM_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            options={"temperature": 0.0}
         )
-        return response.text
+        return response["message"]["content"]
         
     except Exception as e:
         logging.error(f"RAG generation failure (backend={RAG_LLM_BACKEND}): {e}")
