@@ -18,13 +18,18 @@ echo -e "  ========================================\n"
 # === Step 1: Python ===
 echo -e "  [1/7] Checking Python..."
 PYTHON_BIN=""
-for bin in python3 python; do
+for bin in python3.13 python3.12 python3.11 python3 python; do
     if command -v "$bin" &>/dev/null; then
-        PYTHON_BIN="$bin"
-        break
+        ver=$("$bin" --version 2>&1 | awk '{print $2}' | cut -d. -f1,2)
+        major=$(echo "$ver" | cut -d. -f1)
+        minor=$(echo "$ver" | cut -d. -f2)
+        if [ "$major" -ge 3 ] && [ "$minor" -ge 11 ]; then
+            PYTHON_BIN="$bin"
+            break
+        fi
     fi
 done
-[ -n "$PYTHON_BIN" ] || fail "Python not found. Install: https://www.python.org/downloads/"
+[ -n "$PYTHON_BIN" ] || fail "Python 3.11+ not found. Install: https://www.python.org/downloads/"
 echo -e "  ${GREEN}[OK]${RESET} $("$PYTHON_BIN" --version 2>&1) ($PYTHON_BIN)"
 
 # === Step 2: Config ===

@@ -25,6 +25,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 CONFIG_DIR = Path.home() / ".config" / "friday"
 CONFIG_ENV = CONFIG_DIR / ".env"
 PROJECT_ENV = PROJECT_ROOT / ".env"
+PYTHON_BIN = sys.executable  # Default, overridden by check_python()
 
 # ─── Helpers ───────────────────────────────────────────────────────────────────
 def clear():
@@ -103,12 +104,39 @@ def prompt_yn(question, default=True):
 # ─── Prerequisite checks ──────────────────────────────────────────────────────
 def check_python():
     section("Python Check")
-    v = sys.version_info
-    if v.major == 3 and v.minor >= 11:
-        success(f"Python {v.major}.{v.minor}.{v.micro} — OK (uv will use 3.12 in venv)")
+    # Search for Python 3.11+ — check common versioned names first
+    found_bin = None
+    found_ver = None
+    for name in ["python3.13", "python3.12", "python3.11", "python3", "python"]:
+        try:
+            import shutil
+            path = shutil.which(name)
+            if not path:
+                continue
+            import subprocess
+            out = subprocess.check_output([path, "--version"], text=True, stderr=subprocess.STDOUT).strip()
+            # Parse "Python 3.13.14" → (3, 13, 14)
+            ver_str = out.replace("Python", "").strip()
+            parts = ver_str.split(".")
+            major, minor = int(parts[0]), int(parts[1])
+            if major == 3 and minor >= 11:
+                found_bin = path
+                found_ver = f"{major}.{minor}.{parts[2] if len(parts) > 2 else '0'}"
+                break
+        except Exception:
+            continue
+
+    if found_bin:
+        success(f"Python {found_ver} — OK ({found_bin})")
+        # Make this the python for the rest of setup
+        import shutil as _shutil
+        global PYTHON_BIN
+        PYTHON_BIN = found_bin
         return True
-    error(f"Python {v.major}.{v.minor}.{v.micro} found, but 3.11+ required.")
-    info("Install Python 3.11+: https://www.python.org/downloads/")
+
+    error("Python 3.11+ not found.")
+    info("Install: https://www.python.org/downloads/")
+    info("After install, run: brew link python3  (if using Homebrew)")
     return False
 
 def check_uv():
