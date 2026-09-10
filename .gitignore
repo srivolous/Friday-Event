@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+.gitignore
+/venv
+/.venv
+/mark-orb/node_modules
+/mark-orb/out
+.embeddings_cache.json
+.embeddings_cache_mxbai.json
+__pycache__/
+*.pyc
+mark-orb/build/icon.iconset/
