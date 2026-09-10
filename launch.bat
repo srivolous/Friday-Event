@@ -4,6 +4,8 @@ setlocal EnableDelayedExpansion
 REM ─── F.R.I.D.A.Y. Launcher (Windows) ─────────────────────────────────────────
 set "DIR=%~dp0"
 set "CONFIG_ENV=%USERPROFILE%\.config\friday\.env"
+set "LOG_DIR=%DIR%logs"
+if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 
 REM ─── Python auto-install ─────────────────────────────────────────────────────
 echo.
@@ -58,7 +60,6 @@ if not errorlevel 1 (
     echo   [i] Installing via winget...
     winget install Python.Python.3.12 --silent --accept-source-agreements --accept-package-agreements
     if not errorlevel 1 (
-        REM Refresh PATH
         set "PATH=%LOCALAPPDATA%\Programs\Python\Python312;%PATH%"
         set "PATH=%LOCALAPPDATA%\Programs\Python\Python312\Scripts;%PATH%"
     )
@@ -104,8 +105,10 @@ for %%P in (python3.12 python3.11 python) do (
 
 if defined PYTHON_BIN goto :python_ok
 
-echo   [!!] Python 3.11-3.13 installation failed.
+echo.
+echo   [!!] Python 3.11-3.12 installation failed.
 echo   Install manually: https://www.python.org/downloads/
+echo.
 pause
 exit /b 1
 
@@ -119,7 +122,9 @@ if not exist "%CONFIG_ENV%" (
         echo.
         !PYTHON_BIN! "%DIR%setup.py"
         if errorlevel 1 (
-            echo   Setup failed.
+            echo.
+            echo   [!!] Setup failed. Check the output above for errors.
+            echo.
             pause
             exit /b 1
         )
@@ -131,38 +136,93 @@ REM ─── Check uv ───────────────────
 where uv >nul 2>nul
 if errorlevel 1 (
     echo   uv not found. Installing...
-    !PYTHON_BIN! -m pip install uv 2>nul || !PYTHON_BIN! -m ensurepip && !PYTHON_BIN! -m pip install uv
+    !PYTHON_BIN! -m pip install uv 2>nul
+    if errorlevel 1 (
+        !PYTHON_BIN! -m ensurepip 2>nul && !PYTHON_BIN! -m pip install uv
+    )
+    where uv >nul 2>nul
+    if errorlevel 1 (
+        echo.
+        echo   [!!] Failed to install uv.
+        echo   Install manually: pip install uv
+        echo.
+        pause
+        exit /b 1
+    )
 )
 
 REM ─── Check Node.js ───────────────────────────────────────────────────────────
 where node >nul 2>nul
 if errorlevel 1 (
-    echo   Node.js not found. Please install it from https://nodejs.org/
+    echo.
+    echo   [!!] Node.js not found.
+    echo   Install from: https://nodejs.org/
+    echo.
     pause
     exit /b 1
 )
 
-REM ─── Install deps if needed ──────────────────────────────────────────────────
+REM ─── Install Python deps ─────────────────────────────────────────────────────
 if not exist "%DIR%.venv" (
-    echo   Installing Python dependencies...
-    cd /d "%DIR%" && uv sync
+    echo.
+    echo   Installing Python dependencies (uv sync)...
+    cd /d "%DIR%"
+    uv sync 2>&1
+    if errorlevel 1 (
+        echo.
+        echo   [!!] uv sync failed. Check the error above.
+        echo   Common fix: make sure Python 3.12 is installed and in PATH.
+        echo.
+        pause
+        exit /b 1
+    )
+    echo   [OK] Python dependencies installed.
 )
 
+REM ─── Install Node deps ───────────────────────────────────────────────────────
 if not exist "%DIR%mark-orb\node_modules" (
-    echo   Installing Electron dependencies...
-    cd /d "%DIR%mark-orb" && npm install
+    echo.
+    echo   Installing Electron dependencies (npm install)...
+    cd /d "%DIR%mark-orb"
+    npm install 2>&1
+    if errorlevel 1 (
+        echo.
+        echo   [!!] npm install failed. Check the error above.
+        echo.
+        pause
+        exit /b 1
+    )
+    echo   [OK] Electron dependencies installed.
 )
 
 REM ─── Start Python backend ────────────────────────────────────────────────────
+echo.
 echo   Starting Python backend...
 cd /d "%DIR%"
-start /b uv run python_backend.py 5001
+
+REM Kill any existing backend on port 5001
+for /f "tokens=5" %%p in ('netstat -aon ^| findstr :5001 ^| findstr LISTENING 2^>nul') do (
+    taskkill /PID %%p /F >nul 2>nul
+)
+
+REM Start backend and log output
+uv run python_backend.py 5001 >"%LOG_DIR%\backend.log" 2>&1
+set "BACKEND_PID=!errorlevel!"
 
 REM Wait for backend
-echo   Waiting for backend...
+echo   Waiting for backend to start...
 set /a "count=0"
 :wait_loop
-if !count! geq 30 goto backend_ready
+if !count! geq 30 (
+    echo.
+    echo   [!!] Backend did not start within 30 seconds.
+    echo   Check log: %LOG_DIR%\backend.log
+    echo.
+    type "%LOG_DIR%\backend.log"
+    echo.
+    pause
+    exit /b 1
+)
 curl -s http://127.0.0.1:5001/health >nul 2>nul
 if not errorlevel 1 goto backend_ready
 timeout /t 1 /nobreak >nul
@@ -170,13 +230,19 @@ set /a "count+=1"
 goto wait_loop
 
 :backend_ready
-echo   Backend ready.
+echo   [OK] Backend ready on port 5001.
 
 REM ─── Start Electron app ──────────────────────────────────────────────────────
-echo   Launching F.R.I.D.A.Y...
+echo.
+echo   Launching F.R.I.D.A.Y. ...
 cd /d "%DIR%mark-orb"
-npx electron-vite dev
+npx electron-vite dev 2>&1
 
 echo.
+echo   ──────────────────────────────────────────
 echo   F.R.I.D.A.Y. has been closed.
+echo.
+echo   Backend log: %LOG_DIR%\backend.log
+echo   ──────────────────────────────────────────
+echo.
 pause
