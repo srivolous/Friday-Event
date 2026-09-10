@@ -6,6 +6,8 @@ import inspect
 import asyncio
 import tempfile
 import threading
+import signal
+import traceback
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
@@ -13,6 +15,23 @@ from urllib.parse import parse_qs, urlparse
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
+
+# Global crash handler — catch everything so the process doesn't silently die
+def _crash_handler(exc_type, exc_value, exc_tb):
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_tb)
+        return
+    logging.error("[CRASH] Unhandled exception:", exc_info=(exc_type, exc_value, exc_tb))
+
+sys.excepthook = _crash_handler
+
+# Catch signals that kill the process
+def _signal_handler(signum, frame):
+    logging.error(f"[CRASH] Received signal {signum}, shutting down.")
+    sys.exit(1)
+
+signal.signal(signal.SIGTERM, _signal_handler)
+signal.signal(signal.SIGINT, _signal_handler)
 
 from dotenv import load_dotenv
 # Load .env: check ~/.config/friday/.env first, then project root
@@ -30,8 +49,17 @@ from scipy.io.wavfile import write
 from faster_whisper import WhisperModel
 from kokoro import KPipeline
 import ollama
-from google import genai as _genai
-from google.genai import types as _genai_types
+
+# Lazy-import google.genai to avoid native DLL crash on load
+_genai = None
+_genai_types = None
+def _ensure_genai():
+    global _genai, _genai_types
+    if _genai is None:
+        from google import genai as _g
+        from google.genai import types as _t
+        _genai = _g
+        _genai_types = _t
 
 from prompts import AGENT_INSTRUCTION, SESSION_INSTRUCTION
 import tools
@@ -104,12 +132,21 @@ class LLMBackend:
         self._gemini_client = None
         self._ollama_client = None
         self.active_backend = "none"
-        self._init_backends()
+        try:
+            self._init_backends()
+        except OSError as e:
+            # Native DLL crash (memory access violation, etc.)
+            logging.error(f"[LLMBackend] Native crash during init: {e}")
+            logging.error("[LLMBackend] This may be a Python 3.13 compatibility issue with native extensions.")
+            logging.error("[LLMBackend] Try: pip install --force-reinstall certifi httpx")
+        except Exception as e:
+            logging.error(f"[LLMBackend] Init failed: {e}")
 
     def _init_backends(self):
         if GOOGLE_API_KEY:
             logging.info(f"[LLMBackend] GOOGLE_API_KEY found ({GOOGLE_API_KEY[:8]}...), initializing Gemini...")
             try:
+                _ensure_genai()
                 self._gemini_client = _genai.Client(api_key=GOOGLE_API_KEY)
                 self.active_backend = "gemini"
                 logging.info(f"[LLMBackend] Gemini API active (model: {GEMINI_MODEL})")
@@ -133,6 +170,7 @@ class LLMBackend:
     # ——— Gemini path ———
     def _gemini_chat(self, messages: list, use_tools: bool) -> dict:
         """Send chat via Gemini. Returns {content, tool_name, tool_args} or raises."""
+        _ensure_genai()
         # Convert message history to Gemini format
         system_msg = ""
         contents = []

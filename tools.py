@@ -12,8 +12,15 @@ from typing import Optional
 from ddgs import DDGS
 from ddgs.exceptions import DDGSException, RatelimitException, TimeoutException
 import ollama
-from google import genai
 from livekit.agents import function_tool
+
+# Lazy import google.genai to avoid native DLL crash on Python 3.13
+_genai = None
+def _ensure_genai():
+    global _genai
+    if _genai is None:
+        from google import genai as _g
+        _genai = _g
 
 # Resolve relative to this file's location, NOT the process's current working
 # directory (which can differ depending on how/where the agent is launched).
@@ -36,7 +43,8 @@ def get_gemini_client():
         key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
         if not key:
             raise ValueError("No GOOGLE_API_KEY or GEMINI_API_KEY found in environment variables.")
-        _gemini_client = genai.Client(api_key=key)
+        _ensure_genai()
+        _gemini_client = _genai.Client(api_key=key)
     return _gemini_client
 
 # Which LLM generates the final answer from retrieved RAG context.
@@ -239,10 +247,11 @@ async def query_knowledge_base(query: str) -> str:
 
         if RAG_LLM_BACKEND == "online":
             try:
+                _ensure_genai()
                 response = get_gemini_client().models.generate_content(
                     model="gemini-2.0-flash",
                     contents=prompt,
-                    config=genai.types.GenerateContentConfig(temperature=0.0)
+                    config=_genai.types.GenerateContentConfig(temperature=0.0)
                 )
                 return response.text
             except Exception as e:
