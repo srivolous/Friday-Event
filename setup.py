@@ -130,9 +130,11 @@ def check_uv():
 
 def check_node():
     section("Node.js Check")
-    if shutil.which("node"):
+    node = shutil.which("node") or shutil.which("node.exe")
+    if node:
         try:
-            ver = subprocess.check_output(["node", "--version"], text=True).strip()
+            ver = subprocess.check_output([node, "--version"], text=True,
+                shell=(platform.system() == "Windows")).strip()
             success(f"Node.js {ver} — OK")
             return True
         except Exception:
@@ -366,19 +368,23 @@ def write_env(config):
 # ─── Install dependencies ─────────────────────────────────────────────────────
 def install_deps():
     section("Installing Python Dependencies")
+    uv = shutil.which("uv") or shutil.which("uv.exe")
+    if not uv:
+        error("uv not found. Install it: https://docs.astral.sh/uv/")
+        return
     info("Running: uv sync (this may take a minute)...")
     try:
         result = subprocess.run(
-            ["uv", "sync"],
+            [uv, "sync"],
             cwd=str(PROJECT_ROOT),
-            capture_output=True, text=True
+            capture_output=True, text=True,
+            shell=(platform.system() == "Windows")
         )
         if result.returncode == 0:
             success("Python dependencies installed.")
         else:
             error(f"uv sync failed (exit code {result.returncode}).")
             if result.stderr:
-                # Show last few lines of error
                 err_lines = result.stderr.strip().splitlines()
                 for line in err_lines[-5:]:
                     print(f"    {DIM}{line}{RESET}")
@@ -394,15 +400,17 @@ def install_node_deps():
     if not orb_dir.exists():
         warn("mark-orb directory not found — skipping Electron deps.")
         return
-    if not shutil.which("npm"):
+    npm = shutil.which("npm") or shutil.which("npm.cmd")
+    if not npm:
         warn("npm not found — skipping Electron deps.")
         return
     info("Running: npm install (in mark-orb/)...")
     try:
         result = subprocess.run(
-            ["npm", "install"],
+            [npm, "install"],
             cwd=str(orb_dir),
-            capture_output=True, text=True
+            capture_output=True, text=True,
+            shell=(platform.system() == "Windows")
         )
         if result.returncode == 0:
             success("Electron dependencies installed.")
@@ -412,6 +420,8 @@ def install_node_deps():
                 err_lines = result.stderr.strip().splitlines()
                 for line in err_lines[-5:]:
                     print(f"    {DIM}{line}{RESET}")
+    except FileNotFoundError:
+        warn("npm not found — skipping Electron deps.")
     except Exception as e:
         error(f"Unexpected error during npm install: {e}")
 
