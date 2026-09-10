@@ -5,15 +5,94 @@ REM ─── F.R.I.D.A.Y. Launcher (Windows) ───────────�
 set "DIR=%~dp0"
 set "CONFIG_ENV=%USERPROFILE%\.config\friday\.env"
 
+REM ─── Python auto-install ─────────────────────────────────────────────────────
+echo.
+echo   ── Checking Python ──
+echo.
+
+set "PYTHON_BIN="
+
+REM Try known Python binaries in priority order
+for %%P in (python3.13 python3.12 python3.11 python3 python) do (
+    where %%P >nul 2>nul
+    if not errorlevel 1 (
+        for /f "tokens=2 delims= " %%V in ('%%P --version 2^>^&1') do (
+            set "PYVER=%%V"
+            for /f "tokens=1,2 delims=." %%A in ("%%V") do (
+                set /a "PYMAJ=%%A"
+                set /a "PYMIN=%%B"
+                if !PYMAJ! geq 3 if !PYMIN! geq 11 if !PYMIN! leq 13 (
+                    set "PYTHON_BIN=%%P"
+                )
+            )
+        )
+    )
+)
+
+if defined PYTHON_BIN (
+    echo   [OK] Python found: !PYTHON_BIN!
+    goto :python_ok
+)
+
+echo   [!!] Python 3.11-3.13 not found.
+echo   Auto-installing...
+
+REM Method 1: Try winget (fastest, silent)
+where winget >nul 2>nul
+if not errorlevel 1 (
+    echo   [i] Installing via winget...
+    winget install Python.Python.3.13 --silent --accept-source-agreements --accept-package-agreements
+    if not errorlevel 1 (
+        REM Refresh PATH
+        set "PATH=%LOCALAPPDATA%\Programs\Python\Python313;%PATH%"
+        set "PATH=%LOCALAPPDATA%\Programs\Python\Python313\Scripts;%PATH%"
+        where python3.13 >nul 2>nul && set "PYTHON_BIN=python3.13" && goto :python_ok
+        where python >nul 2>nul && set "PYTHON_BIN=python" && goto :python_ok
+    )
+)
+
+REM Method 2: Try choco
+where choco >nul 2>nul
+if not errorlevel 1 (
+    echo   [i] Installing via Chocolatey...
+    choco install python3.13 -y
+    if not errorlevel 1 (
+        set "PATH=%PATH%;C:\Python313;C:\Python313\Scripts"
+        where python3.13 >nul 2>nul && set "PYTHON_BIN=python3.13" && goto :python_ok
+        where python >nul 2>nul && set "PYTHON_BIN=python" && goto :python_ok
+    )
+)
+
+REM Method 3: Download installer from python.org
+echo   [i] Downloading Python installer from python.org...
+set "INSTALLER=%TEMP%\python-3.13.0-amd64.exe"
+curl -L -o "%INSTALLER%" "https://www.python.org/ftp/python/3.13.0/python-3.13.0-amd64.exe"
+if exist "%INSTALLER%" (
+    echo   [i] Running silent installer...
+    "%INSTALLER%" /quiet InstallAllUsers=1 PrependPath=1 Include_pip=1
+    timeout /t 30 /nobreak >nul
+    set "PATH=%PATH%;C:\Program Files\Python313;C:\Program Files\Python313\Scripts"
+    where python3.13 >nul 2>nul && set "PYTHON_BIN=python3.13" && goto :python_ok
+    where python >nul 2>nul && set "PYTHON_BIN=python" && goto :python_ok
+    del "%INSTALLER%" 2>nul
+)
+
+echo   [!!] Python installation failed.
+echo   Install manually: https://www.python.org/downloads/
+pause
+exit /b 1
+
+:python_ok
+
 REM ─── First-run check ─────────────────────────────────────────────────────────
 if not exist "%CONFIG_ENV%" (
     if not exist "%DIR%.env" (
         echo.
         echo   No configuration found. Running setup wizard...
         echo.
-        python "%DIR%setup.py"
+        !PYTHON_BIN! "%DIR%setup.py"
         if errorlevel 1 (
-            echo   Setup failed. Make sure Python 3.11+ is installed.
+            echo   Setup failed.
             pause
             exit /b 1
         )
@@ -25,7 +104,7 @@ REM ─── Check uv ───────────────────
 where uv >nul 2>nul
 if errorlevel 1 (
     echo   uv not found. Installing...
-    python -m pip install uv
+    !PYTHON_BIN! -m pip install uv 2>nul || !PYTHON_BIN! -m ensurepip && !PYTHON_BIN! -m pip install uv
 )
 
 REM ─── Check Node.js ───────────────────────────────────────────────────────────
