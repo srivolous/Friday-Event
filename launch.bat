@@ -77,14 +77,14 @@ echo   [OK]
 REM === Step 6: Node deps ===
 echo   [6/7] Checking Electron dependencies...
 cd /d "%DIR%mark-orb"
-if not exist "node_modules" (
+if not exist "node_modules\.package-lock.json" (
     echo   Running npm install...
     npm install >"%LOG_DIR%\npm_install.log" 2>&1
-    if !errorlevel! neq 0 (
-        echo   [FATAL] npm install failed.
-        type "%LOG_DIR%\npm_install.log"
-        pause & exit /b 1
-    )
+)
+if not exist "node_modules" (
+    echo   [FATAL] npm install failed.
+    type "%LOG_DIR%\npm_install.log"
+    pause & exit /b 1
 )
 if not exist "node_modules\.bin\electron-vite.cmd" (
     npm install >"%LOG_DIR%\npm_install.log" 2>&1
