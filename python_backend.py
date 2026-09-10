@@ -108,12 +108,15 @@ class LLMBackend:
 
     def _init_backends(self):
         if GOOGLE_API_KEY:
+            logging.info(f"[LLMBackend] GOOGLE_API_KEY found ({GOOGLE_API_KEY[:8]}...), initializing Gemini...")
             try:
                 self._gemini_client = _genai.Client(api_key=GOOGLE_API_KEY)
                 self.active_backend = "gemini"
                 logging.info(f"[LLMBackend] Gemini API active (model: {GEMINI_MODEL})")
             except Exception as e:
-                logging.warning(f"[LLMBackend] Gemini init failed: {e}. Will try Ollama.")
+                logging.warning(f"[LLMBackend] Gemini init failed: {e}. Falling back to Ollama.")
+        else:
+            logging.info("[LLMBackend] No GOOGLE_API_KEY set, trying Ollama...")
 
         if self.active_backend != "gemini":
             try:
@@ -125,6 +128,7 @@ class LLMBackend:
                 logging.info(f"[LLMBackend] Ollama active at {endpoint} (model: {OLLAMA_MODEL})")
             except Exception as e:
                 logging.error(f"[LLMBackend] Ollama init failed: {e}. No LLM backend available!")
+                logging.error("[LLMBackend] Set GOOGLE_API_KEY for Gemini or ensure Ollama is running.")
 
     # ——— Gemini path ———
     def _gemini_chat(self, messages: list, use_tools: bool) -> dict:

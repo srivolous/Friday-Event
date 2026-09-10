@@ -142,44 +142,116 @@ def check_node():
     return prompt_yn("Continue without Node.js? (can build later)", default=True)
 
 # ─── Provider setup ───────────────────────────────────────────────────────────
+def _validate_gemini_key(key):
+    """Validate a Gemini API key. Returns (ok: bool, message: str)."""
+    import urllib.request
+    import urllib.error
+    import ssl
+
+    # Try multiple validation approaches
+    endpoints = [
+        # Standard Gemini API key endpoint
+        f"https://generativelanguage.googleapis.com/v1beta/models?key={key}",
+        # Alternative: try a lightweight model call
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={key}",
+    ]
+
+    # Create SSL context that works on all platforms
+    ctx = ssl.create_default_context()
+
+    for url in endpoints:
+        try:
+            if "generateContent" in url:
+                # POST request with minimal payload
+                data = json.dumps({"contents": [{"parts": [{"text": "hi"}]}]}).encode()
+                req = urllib.request.Request(url, data=data, method="POST",
+                    headers={"Content-Type": "application/json"})
+            else:
+                req = urllib.request.Request(url, method="GET")
+
+            with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
+                if resp.status == 200:
+                    return True, "API key validated."
+                return True, f"Key accepted (HTTP {resp.status})."
+
+        except urllib.error.HTTPError as e:
+            body = ""
+            try:
+                body = e.read().decode("utf-8", errors="ignore")
+            except Exception:
+                pass
+
+            if e.code == 400:
+                # 400 often means bad request format, not necessarily bad key
+                if "API_KEY_INVALID" in body or "invalid" in body.lower():
+                    return False, "API key is invalid."
+                # Could be the endpoint format, try next
+                continue
+            elif e.code == 403:
+                # 403 = key exists but lacks permission — still usable
+                if "API_KEY_INVALID" in body:
+                    return False, "API key is invalid."
+                return True, "Key valid but may lack some permissions. Continuing."
+            elif e.code == 429:
+                return True, "Key valid (rate limited on validation, but usable)."
+            elif e.code in (500, 502, 503):
+                # Server error — key might be fine, endpoint is down
+                continue
+            else:
+                # For other errors, try next endpoint
+                continue
+
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            # Network error — can't validate, but key might work
+            continue
+
+    # All endpoints failed — try a completely different approach: DNS check
+    try:
+        import socket
+        socket.getaddrinfo("generativelanguage.googleapis.com", 443, timeout=5)
+        # DNS resolves but API calls failed — key might be wrong format
+        return None, "Could not reach Gemini API. Check your internet connection."
+    except (socket.gaierror, OSError):
+        return None, "No internet connection. Key will be saved but not validated."
+
 def setup_gemini():
     section("Gemini API Setup")
     info("Get your API key at: https://aistudio.google.com/apikey")
+    info("Standard keys start with 'AIza...'")
     print()
+
+    # Check if there's already a key in .env
+    existing_key = ""
+    if PROJECT_ENV.exists():
+        for line in PROJECT_ENV.read_text().splitlines():
+            if line.strip().startswith("GOOGLE_API_KEY="):
+                existing_key = line.split("=", 1)[1].strip().strip('"').strip("'")
+                break
+
+    if existing_key:
+        info(f"Existing key found: {existing_key[:8]}...{existing_key[-4:]}")
+        if not prompt_yn("Replace with a new key?", default=False):
+            print(f"\n  {GREEN}Keeping existing key.{RESET}")
+            return {"GOOGLE_API_KEY": existing_key, "GEMINI_MODEL": "gemini-2.0-flash"}
+
     key = prompt_input("Gemini API Key", hidden=True)
     if not key:
         error("No API key provided. Gemini setup cancelled.")
         return {}
 
-    print(f"\n  {DIM}Validating key...{RESET}")
-    try:
-        import urllib.request
-        import urllib.error
-        # Lightweight validation: hit the models endpoint (no SDK needed)
-        url = f"https://generativelanguage.googleapis.com/v1beta/models?key={key}"
-        req = urllib.request.Request(url, method="GET")
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            if resp.status == 200:
-                success("API key validated.")
-            else:
-                warn(f"Key accepted with status {resp.status}. Continuing anyway.")
-    except urllib.error.HTTPError as e:
-        if e.code == 400:
-            # 400 = invalid key format
-            error(f"API key appears invalid (HTTP 400).")
-            if not prompt_yn("Use this key anyway?", default=False):
-                return {}
-        elif e.code == 403:
-            # 403 = key valid but no access — still usable, might just lack embed permissions
-            warn("Key valid but may lack some API permissions. Continuing anyway.")
-        else:
-            error(f"Validation error: HTTP {e.code}")
-            if not prompt_yn("Use this key anyway?", default=False):
-                return {}
-    except Exception as e:
-        error(f"Could not validate key: {e}")
+    print(f"\n  {DIM}Validating key (this may take a moment)...{RESET}")
+    ok, msg = _validate_gemini_key(key)
+
+    if ok is True:
+        success(msg)
+    elif ok is False:
+        error(msg)
         if not prompt_yn("Use this key anyway?", default=False):
             return {}
+    else:
+        # None = couldn't validate (network issue)
+        warn(msg)
+        info("Saving key anyway — it will be validated when Friday starts.")
 
     model = prompt_input("Gemini chat model", default="gemini-2.0-flash")
     return {
@@ -196,12 +268,21 @@ def setup_ollama():
     url = prompt_input("Ollama URL", default="http://localhost:11434")
     model = prompt_input("Ollama chat model", default="llama3.1:latest")
 
+    # Check connectivity — try with ollama lib if available, else use urllib
     print(f"\n  {DIM}Checking Ollama connectivity...{RESET}")
     try:
-        import ollama
-        host = url.replace("http://", "").replace("https://", "")
-        client = ollama.Client(host=f"http://{host}" if "://" not in url else url)
-        client.list()
+        try:
+            import ollama as _ollama
+            host = url.replace("http://", "").replace("https://", "")
+            client = _ollama.Client(host=f"http://{host}" if "://" not in url else url)
+            client.list()
+        except ImportError:
+            # ollama lib not installed yet — use raw HTTP
+            import urllib.request
+            test_url = url.rstrip("/") + "/api/tags"
+            req = urllib.request.Request(test_url, method="GET")
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                pass  # If we get here, Ollama is reachable
         success(f"Ollama reachable at {url}")
     except Exception as e:
         error(f"Cannot reach Ollama at {url}: {e}")
@@ -230,18 +311,21 @@ def setup_email():
 def write_env(config):
     section("Writing Configuration")
 
-    # Merge with existing .env if present
+    # Merge with existing .env if present — preserve all existing values
     existing = {}
     env_path = PROJECT_ENV
     if env_path.exists():
-        for line in env_path.read_text().splitlines():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if line and not line.startswith("#") and "=" in line:
                 k, _, v = line.partition("=")
-                existing[k.strip()] = v.strip().strip('"').strip("'")
+                # Strip quotes AND leading/trailing whitespace from values
+                existing[k.strip()] = v.strip().strip('"').strip("'").strip()
 
-    existing.update(config)
-    existing = {k: v for k, v in existing.items() if v}  # remove empty vals
+    # Apply new config (only non-empty values)
+    for k, v in config.items():
+        if v:
+            existing[k] = v
 
     lines = [
         "# --- LiveKit (optional, for voice agent) ---",
@@ -262,31 +346,47 @@ def write_env(config):
         f"GMAIL_APP_PASSWORD={existing.get('GMAIL_APP_PASSWORD', '')}",
     ]
 
-    # Write to project root (UTF-8 for cross-platform compat)
-    PROJECT_ENV.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    success(f"Written to {PROJECT_ENV}")
+    content = "\n".join(lines) + "\n"
+
+    # Write to project root
+    try:
+        PROJECT_ENV.write_text(content, encoding="utf-8")
+        success(f"Written to {PROJECT_ENV}")
+    except Exception as e:
+        error(f"Failed to write {PROJECT_ENV}: {e}")
 
     # Also write to ~/.config/friday/ for installed builds
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    CONFIG_ENV.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    success(f"Written to {CONFIG_ENV}")
+    try:
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        CONFIG_ENV.write_text(content, encoding="utf-8")
+        success(f"Written to {CONFIG_ENV}")
+    except Exception as e:
+        warn(f"Could not write to {CONFIG_ENV}: {e}")
 
 # ─── Install dependencies ─────────────────────────────────────────────────────
 def install_deps():
     section("Installing Python Dependencies")
     info("Running: uv sync (this may take a minute)...")
     try:
-        subprocess.run(
+        result = subprocess.run(
             ["uv", "sync"],
             cwd=str(PROJECT_ROOT),
-            check=True
+            capture_output=True, text=True
         )
-        success("Python dependencies installed.")
-    except subprocess.CalledProcessError as e:
-        error(f"uv sync failed (exit code {e.returncode}).")
-        warn("You may need to run manually: uv sync")
+        if result.returncode == 0:
+            success("Python dependencies installed.")
+        else:
+            error(f"uv sync failed (exit code {result.returncode}).")
+            if result.stderr:
+                # Show last few lines of error
+                err_lines = result.stderr.strip().splitlines()
+                for line in err_lines[-5:]:
+                    print(f"    {DIM}{line}{RESET}")
+            warn("You may need to run manually: uv sync")
     except FileNotFoundError:
         error("uv not found. Install it: https://docs.astral.sh/uv/")
+    except Exception as e:
+        error(f"Unexpected error during install: {e}")
 
 def install_node_deps():
     section("Installing Electron Dependencies")
@@ -299,63 +399,74 @@ def install_node_deps():
         return
     info("Running: npm install (in mark-orb/)...")
     try:
-        subprocess.run(
+        result = subprocess.run(
             ["npm", "install"],
             cwd=str(orb_dir),
-            check=True
+            capture_output=True, text=True
         )
-        success("Electron dependencies installed.")
-    except subprocess.CalledProcessError as e:
-        error(f"npm install failed (exit code {e.returncode}).")
+        if result.returncode == 0:
+            success("Electron dependencies installed.")
+        else:
+            error(f"npm install failed (exit code {result.returncode}).")
+            if result.stderr:
+                err_lines = result.stderr.strip().splitlines()
+                for line in err_lines[-5:]:
+                    print(f"    {DIM}{line}{RESET}")
+    except Exception as e:
+        error(f"Unexpected error during npm install: {e}")
 
 # ─── Main ──────────────────────────────────────────────────────────────────────
 def main():
-    clear()
-    banner()
+    try:
+        clear()
+        banner()
 
-    # Check if already configured
-    if CONFIG_ENV.exists():
-        info("Existing configuration found.")
-        if not prompt_yn("Reconfigure from scratch?", default=False):
-            print(f"\n  {GREEN}Setup skipped. Existing config preserved.{RESET}\n")
-            return
+        # Check if already configured
+        if CONFIG_ENV.exists():
+            info("Existing configuration found.")
+            if not prompt_yn("Reconfigure from scratch?", default=False):
+                print(f"\n  {GREEN}Setup skipped. Existing config preserved.{RESET}\n")
+                return
 
-    # Prereqs
-    if not check_python():
-        sys.exit(1)
-    uv_ok = check_uv()
-    check_node()
+        # Prereqs — Python is mandatory, uv and node are nice-to-have
+        if not check_python():
+            sys.exit(1)
+        uv_ok = check_uv()
+        check_node()
 
-    # Provider selection
-    print()
-    choice = prompt_choice("Which AI provider do you want to use?", [
-        f"{BOLD}Gemini{RESET} (Cloud) — requires API key, recommended",
-        f"{BOLD}Ollama{RESET} (Local) — requires Ollama running in background",
-    ])
+        # Provider selection
+        print()
+        choice = prompt_choice("Which AI provider do you want to use?", [
+            f"{BOLD}Gemini{RESET} (Cloud) — requires API key, recommended",
+            f"{BOLD}Ollama{RESET} (Local) — requires Ollama running in background",
+        ])
 
-    config = {}
-    if choice == 1:
-        config = setup_gemini()
-    else:
-        config = setup_ollama()
+        config = {}
+        if choice == 1:
+            config = setup_gemini()
+        else:
+            config = setup_ollama()
 
-    if not config:
-        error("Setup incomplete — no provider configured.")
-        sys.exit(1)
+        if not config:
+            error("Setup incomplete — no provider configured.")
+            sys.exit(1)
 
-    # Email (optional)
-    config.update(setup_email())
+        # Email (optional — don't fail if user cancels)
+        try:
+            config.update(setup_email())
+        except (KeyboardInterrupt, EOFError):
+            warn("Skipping email setup.")
 
-    # Write config
-    write_env(config)
+        # Write config
+        write_env(config)
 
-    # Install deps
-    if uv_ok:
-        install_deps()
-    install_node_deps()
+        # Install deps (optional — warn but don't fail)
+        if uv_ok:
+            install_deps()
+        install_node_deps()
 
-    # Done
-    print(f"""
+        # Done
+        print(f"""
 {GREEN}{BOLD}╔══════════════════════════════════════════════════════════════╗
 ║                                                              ║
 ║   {GREEN}Setup complete!{RESET}{GREEN}{BOLD}                                           ║
@@ -370,6 +481,14 @@ def main():
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝{RESET}
 """)
+
+    except KeyboardInterrupt:
+        print(f"\n\n  {YELLOW}Setup cancelled by user.{RESET}\n")
+        sys.exit(0)
+    except Exception as e:
+        error(f"Unexpected error: {e}")
+        info("You can re-run setup.py to try again.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
