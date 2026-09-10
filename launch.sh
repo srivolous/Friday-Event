@@ -227,6 +227,18 @@ echo -e "  ${GREEN}[OK]${RESET}"
 # === Step 7: Launch ===
 echo -e "  [7/7] Starting F.R.I.D.A.Y. ...\n"
 
+# Ensure all packages are fully installed (uv run would trigger more downloads)
+cd "$DIR"
+if [ -f ".venv/bin/python" ]; then
+    echo -e "  ${DIM}Verifying packages are installed...${RESET}"
+    .venv/bin/python -c "import faster_whisper; import kokoro; import google.genai; import numpy" 2>/dev/null
+    if [ $? -ne 0 ]; then
+        echo -e "  ${YELLOW}Some packages missing, running uv sync...${RESET}"
+        uv sync --python "$PYTHON_BIN" >"$LOG_DIR/uv_sync.log" 2>&1 || { tail -20 "$LOG_DIR/uv_sync.log"; fail "uv sync failed"; }
+    fi
+    echo -e "  ${GREEN}[OK]${RESET} Packages verified."
+fi
+
 if command -v lsof &>/dev/null; then lsof -ti:5001 2>/dev/null | xargs kill -9 2>/dev/null || true; fi
 sleep 1
 
@@ -234,7 +246,8 @@ cd "$DIR"
 uv run python_backend.py 5001 >"$LOG_DIR/backend.log" 2>&1 &
 BACKEND_PID=$!
 
-TIMEOUT=30
+# First run needs extra time for uv to finish installing packages
+TIMEOUT=120
 for i in $(seq 1 $TIMEOUT); do
     curl -s http://127.0.0.1:5001/health >/dev/null 2>&1 && break
     if [ "$i" -eq "$TIMEOUT" ]; then
