@@ -92,13 +92,15 @@ if [ "$PROVIDER" = "gemini" ]; then
         fail "No API key provided."
     fi
     echo -e "  ${DIM}Validating key...${RESET}"
-    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://generativelanguage.googleapis.com/v1beta/models?key=$GEMINI_KEY" --max-time 10 2>/dev/null)
+    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+        -H "x-goog-api-key: $GEMINI_KEY" \
+        "https://generativelanguage.googleapis.com/v1beta/models" --max-time 10 2>/dev/null)
     if [ "$HTTP_CODE" = "200" ]; then
         echo -e "  ${GREEN}[OK]${RESET} Key validated."
     elif [ "$HTTP_CODE" = "403" ]; then
         echo -e "  ${YELLOW}[WARN]${RESET} Key valid but may lack some permissions. Continuing."
-    elif [ "$HTTP_CODE" = "400" ]; then
-        echo -e "  ${RED}[WARN]${RESET} Key may be invalid (HTTP 400). Continuing anyway."
+    elif [ "$HTTP_CODE" = "429" ]; then
+        echo -e "  ${YELLOW}[WARN]${RESET} Key valid (rate limited). Continuing."
     else
         echo -e "  ${YELLOW}[WARN]${RESET} Could not validate (HTTP $HTTP_CODE). Continuing."
     fi

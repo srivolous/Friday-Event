@@ -178,76 +178,42 @@ def _validate_gemini_key(key):
     import urllib.error
     import ssl
 
-    # Try multiple validation approaches
-    endpoints = [
-        # Standard Gemini API key endpoint
-        f"https://generativelanguage.googleapis.com/v1beta/models?key={key}",
-        # Alternative: try a lightweight model call
-        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={key}",
-    ]
+    # AQ. keys (new auth keys) use header-based auth, skip REST validation
+    # The google-genai SDK handles auth internally
+    if key.startswith("AQ."):
+        return True, "Auth key (AQ.) accepted — SDK handles validation."
 
-    # Create SSL context that works on all platforms
+    # AIza keys (legacy) — try validation via header
     ctx = ssl.create_default_context()
-
-    for url in endpoints:
-        try:
-            if "generateContent" in url:
-                # POST request with minimal payload
-                data = json.dumps({"contents": [{"parts": [{"text": "hi"}]}]}).encode()
-                req = urllib.request.Request(url, data=data, method="POST",
-                    headers={"Content-Type": "application/json"})
-            else:
-                req = urllib.request.Request(url, method="GET")
-
-            with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
-                if resp.status == 200:
-                    return True, "API key validated."
-                return True, f"Key accepted (HTTP {resp.status})."
-
-        except urllib.error.HTTPError as e:
-            body = ""
-            try:
-                body = e.read().decode("utf-8", errors="ignore")
-            except Exception:
-                pass
-
-            if e.code == 400:
-                # 400 often means bad request format, not necessarily bad key
-                if "API_KEY_INVALID" in body or "invalid" in body.lower():
-                    return False, "API key is invalid."
-                # Could be the endpoint format, try next
-                continue
-            elif e.code == 403:
-                # 403 = key exists but lacks permission — still usable
-                if "API_KEY_INVALID" in body:
-                    return False, "API key is invalid."
-                return True, "Key valid but may lack some permissions. Continuing."
-            elif e.code == 429:
-                return True, "Key valid (rate limited on validation, but usable)."
-            elif e.code in (500, 502, 503):
-                # Server error — key might be fine, endpoint is down
-                continue
-            else:
-                # For other errors, try next endpoint
-                continue
-
-        except (urllib.error.URLError, TimeoutError, OSError) as e:
-            # Network error — can't validate, but key might work
-            continue
-
-    # All endpoints failed — try a completely different approach: DNS check
+    url = "https://generativelanguage.googleapis.com/v1beta/models"
     try:
-        import socket
-        socket.getaddrinfo("generativelanguage.googleapis.com", 443, timeout=5)
-        # DNS resolves but API calls failed — key might be wrong format
-        return None, "Could not reach Gemini API. Check your internet connection."
-    except (socket.gaierror, OSError):
+        req = urllib.request.Request(url, method="GET",
+            headers={"x-goog-api-key": key})
+        with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
+            if resp.status == 200:
+                return True, "API key validated."
+            return True, f"Key accepted (HTTP {resp.status})."
+    except urllib.error.HTTPError as e:
+        body = ""
+        try:
+            body = e.read().decode("utf-8", errors="ignore")
+        except Exception:
+            pass
+        if e.code == 400 and "API_KEY_INVALID" in body:
+            return False, "API key is invalid."
+        if e.code == 403:
+            return True, "Key valid but may lack some permissions. Continuing."
+        if e.code == 429:
+            return True, "Key valid (rate limited). Continuing."
+        # Other errors — key might still work, SDK handles auth
+        return True, f"Could not fully validate (HTTP {e.code}), but key will be used."
+    except (urllib.error.URLError, TimeoutError, OSError):
         return None, "No internet connection. Key will be saved but not validated."
 
 def setup_gemini():
     section("Gemini API Setup")
     info("Get your API key at: https://aistudio.google.com/apikey")
-    info("Standard keys start with 'AIza...'")
+    info("Keys start with 'AIza' or 'AQ.'")
     print()
 
     # Check if there's already a key in .env
@@ -259,14 +225,14 @@ def setup_gemini():
                 break
 
     if existing_key:
-        if existing_key.startswith("AIza"):
+        if existing_key.startswith("AIza") or existing_key.startswith("AQ."):
             info(f"Existing key found: {existing_key[:8]}...{existing_key[-4:]}")
             if not prompt_yn("Replace with a new key?", default=False):
                 print(f"\n  {GREEN}Keeping existing key.{RESET}")
                 return {"GOOGLE_API_KEY": existing_key, "GEMINI_MODEL": "gemini-2.0-flash"}
         else:
             warn(f"Existing key ({existing_key[:12]}...) is not a valid Gemini API key.")
-            info("Valid keys start with 'AIza'.")
+            info("Valid keys start with 'AIza' or 'AQ.'.")
 
     key = prompt_input("Gemini API Key", hidden=True)
     if not key:
@@ -480,8 +446,8 @@ def main():
                 line = line.strip()
                 if line.startswith("GOOGLE_API_KEY="):
                     val = line.split("=", 1)[1].strip().strip('"').strip("'")
-                    # Valid Gemini keys start with AIza
-                    has_gemini = val.startswith("AIza")
+                    # Valid keys: AIza (legacy) or AQ. (new auth keys)
+                    has_gemini = val.startswith("AIza") or val.startswith("AQ.")
                 if line.startswith("OLLAMA_URL="):
                     val = line.split("=", 1)[1].strip().strip('"').strip("'")
                     has_ollama = bool(val)

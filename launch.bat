@@ -59,7 +59,7 @@ if defined GEMINI_KEY (
 if not defined GEMINI_KEY ( echo   [FATAL] No key provided. & pause & exit /b 1 )
 
 echo   Validating key...
-curl -s -o nul -w "%%{http_code}" "https://generativelanguage.googleapis.com/v1beta/models?key=!GEMINI_KEY!" --max-time 10 >"%TEMP%\friday_http.txt" 2>nul
+curl -s -o nul -w "%%{http_code}" -H "x-goog-api-key: !GEMINI_KEY!" "https://generativelanguage.googleapis.com/v1beta/models" --max-time 10 >"%TEMP%\friday_http.txt" 2>nul
 set /p HTTP_CODE=<"%TEMP%\friday_http.txt"
 if "!HTTP_CODE!"=="200" ( echo   [OK] Key validated. ) else ( echo   [WARN] Could not validate ^(!HTTP_CODE!^). Continuing. )
 
