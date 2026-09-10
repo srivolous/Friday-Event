@@ -229,19 +229,31 @@ def setup_gemini():
 
     print(f"\n  {DIM}Validating key...{RESET}")
     try:
-        from google import genai
-        client = genai.Client(api_key=key)
-        # Test embedding (lightweight, cheaper than chat)
-        result = client.models.embed_content(
-            model="text-embedding-004",
-            contents="test"
-        )
-        if result.embeddings:
-            success("API key validated — embeddings working.")
+        import urllib.request
+        import urllib.error
+        # Lightweight validation: hit the models endpoint (no SDK needed)
+        url = f"https://generativelanguage.googleapis.com/v1beta/models?key={key}"
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status == 200:
+                success("API key validated.")
+            else:
+                warn(f"Key accepted with status {resp.status}. Continuing anyway.")
+    except urllib.error.HTTPError as e:
+        if e.code == 400:
+            # 400 = invalid key format
+            error(f"API key appears invalid (HTTP 400).")
+            if not prompt_yn("Use this key anyway?", default=False):
+                return {}
+        elif e.code == 403:
+            # 403 = key valid but no access — still usable, might just lack embed permissions
+            warn("Key valid but may lack some API permissions. Continuing anyway.")
         else:
-            warn("Key accepted but embedding test returned empty. Continuing anyway.")
+            error(f"Validation error: HTTP {e.code}")
+            if not prompt_yn("Use this key anyway?", default=False):
+                return {}
     except Exception as e:
-        error(f"API key validation failed: {e}")
+        error(f"Could not validate key: {e}")
         if not prompt_yn("Use this key anyway?", default=False):
             return {}
 
