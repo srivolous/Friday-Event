@@ -44,32 +44,95 @@ if not defined PYTHON_BIN (
 
 if not defined PYTHON_BIN (
     echo   [!!] Python 3.11-3.12 not found. Auto-installing...
+    set "INSTALLED_OK=0"
+
+    REM Method 1: Try winget
     where winget >nul 2>nul
     if not errorlevel 1 (
-        winget install Python.Python.3.12 --silent --accept-source-agreements --accept-package-agreements
+        echo   [i] Trying winget...
+        winget install Python.Python.3.12 --silent --accept-source-agreements --accept-package-agreements >nul 2>nul
+        REM Refresh PATH for all common install locations
         set "PATH=%LOCALAPPDATA%\Programs\Python\Python312;%LOCALAPPDATA%\Programs\Python\Python312\Scripts;%PATH%"
-    ) else where choco >nul 2>nul
-    if not errorlevel 1 (
-        choco install python3.12 -y
-        set "PATH=%PATH%;C:\Python312;C:\Python312\Scripts"
-    ) else (
-        echo   [!!] No package manager found. Install Python 3.12 manually.
-        echo   https://www.python.org/downloads/
-        pause
-        exit /b 1
-    )
-    REM Re-check
-    for %%P in (python3.12 python3.11 python) do (
-        where %%P >nul 2>nul
-        if not errorlevel 1 (
-            for /f "tokens=2 delims= " %%V in ('%%P --version 2^>^&1') do (
+        set "PATH=C:\Program Files\Python312;C:\Program Files\Python312\Scripts;%PATH%"
+        set "PATH=C:\Python312;C:\Python312\Scripts;%PATH%"
+        REM Verify it actually worked
+        where python3.12 >nul 2>nul && set "INSTALLED_OK=1"
+        where python >nul 2>nul && if "!INSTALLED_OK!"=="0" (
+            for /f "tokens=2 delims= " %%V in ('python --version 2^>^&1') do (
                 for /f "tokens=1,2 delims=." %%A in ("%%V") do (
-                    set /a "PM=%%A"
-                    set /a "PN=%%B"
-                    if !PM! equ 3 if !PN! geq 11 if !PN! leq 12 set "PYTHON_BIN=%%P"
+                    set /a "TMAJ=%%A"
+                    set /a "TMIN=%%B"
+                    if !TMAJ! equ 3 if !TMIN! leq 12 set "INSTALLED_OK=1"
                 )
             )
         )
+    )
+
+    REM Method 2: Try choco (correct package name)
+    if "!INSTALLED_OK!"=="0" (
+        where choco >nul 2>nul
+        if not errorlevel 1 (
+            echo   [i] Trying Chocolatey...
+            choco install python --version=3.12.7 -y >nul 2>nul
+            set "PATH=%PATH%;C:\Python312;C:\Python312\Scripts;C:\Program Files\Python312;C:\Program Files\Python312\Scripts"
+            where python3.12 >nul 2>nul && set "INSTALLED_OK=1"
+        )
+    )
+
+    REM Method 3: Download from python.org (most reliable)
+    if "!INSTALLED_OK!"=="0" (
+        echo   [i] Downloading Python 3.12 from python.org...
+        set "INSTALLER=%TEMP%\python-3.12.7-amd64.exe"
+        curl -L -o "!INSTALLER!" "https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe" 2>nul
+        if exist "!INSTALLER!" (
+            echo   [i] Running installer (silent, may take a minute)...
+            "!INSTALLER!" /quiet InstallAllUsers=1 PrependPath=1 Include_pip=1
+            timeout /t 15 /nobreak >nul
+            set "PATH=%LOCALAPPDATA%\Programs\Python\Python312;%LOCALAPPDATA%\Programs\Python\Python312\Scripts;%PATH%"
+            set "PATH=C:\Program Files\Python312;C:\Program Files\Python312\Scripts;%PATH%"
+            del "!INSTALLER!" 2>nul
+            where python3.12 >nul 2>nul && set "INSTALLED_OK=1"
+            where python >nul 2>nul && if "!INSTALLED_OK!"=="0" (
+                for /f "tokens=2 delims= " %%V in ('python --version 2^>^&1') do (
+                    for /f "tokens=1,2 delims=." %%A in ("%%V") do (
+                        set /a "TMAJ=%%A"
+                        set /a "TMIN=%%B"
+                        if !TMAJ! equ 3 if !TMIN! leq 12 set "INSTALLED_OK=1"
+                    )
+                )
+            )
+        ) else (
+            echo   [!!] Download failed. Check internet connection.
+        )
+    )
+
+    REM Final re-check
+    for %%P in (python3.12 python3.11 python) do (
+        if "!INSTALLED_OK!"=="0" (
+            where %%P >nul 2>nul
+            if not errorlevel 1 (
+                for /f "tokens=2 delims= " %%V in ('%%P --version 2^>^&1') do (
+                    for /f "tokens=1,2 delims=." %%A in ("%%V") do (
+                        set /a "PM=%%A"
+                        set /a "PN=%%B"
+                        if !PM! equ 3 if !PN! geq 11 if !PN! leq 12 (
+                            set "PYTHON_BIN=%%P"
+                            set "INSTALLED_OK=1"
+                        )
+                    )
+                )
+            )
+        )
+    )
+
+    if "!INSTALLED_OK!"=="0" (
+        echo.
+        echo   [!!] All install methods failed.
+        echo   Please install Python 3.12 manually:
+        echo   https://www.python.org/downloads/release/python-3127/
+        echo.
+        pause
+        exit /b 1
     )
 )
 if not defined PYTHON_BIN (

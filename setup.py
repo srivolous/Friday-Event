@@ -145,11 +145,22 @@ def _install_python():
                 warn("Could not detect package manager.")
                 return False
         elif system == "Windows":
+            installed = False
             if shutil.which("winget"):
-                subprocess.run(["winget", "install", "Python.Python.3.12", "--silent",
-                                "--accept-source-agreements", "--accept-package-agreements"], check=True)
-            else:
-                warn("winget not found. Install Python manually: https://www.python.org/downloads/")
+                try:
+                    subprocess.run(["winget", "install", "Python.Python.3.12", "--silent",
+                                    "--accept-source-agreements", "--accept-package-agreements"], check=True)
+                    installed = True
+                except subprocess.CalledProcessError:
+                    pass
+            if not installed and shutil.which("choco"):
+                try:
+                    subprocess.run(["choco", "install", "python", "--version=3.12.7", "-y"], check=True)
+                    installed = True
+                except subprocess.CalledProcessError:
+                    pass
+            if not installed:
+                warn("Could not auto-install Python. Install manually: https://www.python.org/downloads/release/python-3127/")
                 return False
         else:
             warn(f"Unsupported OS: {system}")
