@@ -103,7 +103,6 @@ def prompt_yn(question, default=True):
 # ─── Prerequisite checks ──────────────────────────────────────────────────────
 def _find_compatible_python():
     """Find a Python 3.11–3.13 binary on the system."""
-    import glob
     candidates = []
     for name in ["python3.13", "python3.12", "python3.11", "python3", "python"]:
         path = shutil.which(name)
@@ -126,7 +125,7 @@ def _find_compatible_python():
 def _install_python():
     """Attempt to auto-install Python 3.13."""
     system = platform.system()
-    info("Attempting automatic Python installation...")
+    info("Attempting automatic Python 3.13 installation...")
     try:
         if system == "Darwin":
             if shutil.which("brew"):

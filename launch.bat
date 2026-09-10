@@ -13,16 +13,31 @@ echo.
 set "PYTHON_BIN="
 
 REM Try known Python binaries in priority order
-for %%P in (python3.13 python3.12 python3.11 python3 python) do (
+for %%P in (python3.13 python3.12 python3.11) do (
     where %%P >nul 2>nul
     if not errorlevel 1 (
         for /f "tokens=2 delims= " %%V in ('%%P --version 2^>^&1') do (
-            set "PYVER=%%V"
             for /f "tokens=1,2 delims=." %%A in ("%%V") do (
                 set /a "PYMAJ=%%A"
                 set /a "PYMIN=%%B"
-                if !PYMAJ! geq 3 if !PYMIN! geq 11 if !PYMIN! leq 13 (
+                if !PYMAJ! equ 3 if !PYMIN! geq 11 if !PYMIN! leq 13 (
                     set "PYTHON_BIN=%%P"
+                )
+            )
+        )
+    )
+)
+
+REM Fallback: generic "python" — must be 3.11-3.13, reject 3.14+
+if not defined PYTHON_BIN (
+    where python >nul 2>nul
+    if not errorlevel 1 (
+        for /f "tokens=2 delims= " %%V in ('python --version 2^>^&1') do (
+            for /f "tokens=1,2 delims=." %%A in ("%%V") do (
+                set /a "PYMAJ=%%A"
+                set /a "PYMIN=%%B"
+                if !PYMAJ! equ 3 if !PYMIN! geq 11 if !PYMIN! leq 13 (
+                    set "PYTHON_BIN=python"
                 )
             )
         )
@@ -58,13 +73,11 @@ if not errorlevel 1 (
     choco install python3.13 -y
     if not errorlevel 1 (
         set "PATH=%PATH%;C:\Python313;C:\Python313\Scripts"
-        where python3.13 >nul 2>nul && set "PYTHON_BIN=python3.13" && goto :python_ok
-        where python >nul 2>nul && set "PYTHON_BIN=python" && goto :python_ok
     )
 )
 
 REM Method 3: Download installer from python.org
-echo   [i] Downloading Python installer from python.org...
+echo   [i] Downloading Python 3.13 installer from python.org...
 set "INSTALLER=%TEMP%\python-3.13.0-amd64.exe"
 curl -L -o "%INSTALLER%" "https://www.python.org/ftp/python/3.13.0/python-3.13.0-amd64.exe"
 if exist "%INSTALLER%" (
@@ -72,12 +85,28 @@ if exist "%INSTALLER%" (
     "%INSTALLER%" /quiet InstallAllUsers=1 PrependPath=1 Include_pip=1
     timeout /t 30 /nobreak >nul
     set "PATH=%PATH%;C:\Program Files\Python313;C:\Program Files\Python313\Scripts"
-    where python3.13 >nul 2>nul && set "PYTHON_BIN=python3.13" && goto :python_ok
-    where python >nul 2>nul && set "PYTHON_BIN=python" && goto :python_ok
     del "%INSTALLER%" 2>nul
 )
 
-echo   [!!] Python installation failed.
+REM Re-check after install
+for %%P in (python3.13 python3.12 python3.11 python) do (
+    where %%P >nul 2>nul
+    if not errorlevel 1 (
+        for /f "tokens=2 delims= " %%V in ('%%P --version 2^>^&1') do (
+            for /f "tokens=1,2 delims=." %%A in ("%%V") do (
+                set /a "PYMAJ2=%%A"
+                set /a "PYMIN2=%%B"
+                if !PYMAJ2! equ 3 if !PYMIN2! geq 11 if !PYMIN2! leq 13 (
+                    set "PYTHON_BIN=%%P"
+                )
+            )
+        )
+    )
+)
+
+if defined PYTHON_BIN goto :python_ok
+
+echo   [!!] Python 3.11-3.13 installation failed.
 echo   Install manually: https://www.python.org/downloads/
 pause
 exit /b 1

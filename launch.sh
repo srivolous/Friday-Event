@@ -25,12 +25,12 @@ trap cleanup EXIT INT TERM
 
 # ─── Python auto-install ──────────────────────────────────────────────────────
 install_python_macos() {
-    echo -e "${YELLOW}! Python 3.11+ not found on macOS.${RESET}"
+    echo -e "${YELLOW}! Python 3.11–3.13 not found on macOS.${RESET}"
     if command -v brew &>/dev/null; then
-        echo -e "${DIM}Installing Python via Homebrew...${RESET}"
+        echo -e "${DIM}Installing Python 3.13 via Homebrew...${RESET}"
         brew install python@3.13
     else
-        echo -e "${DIM}Homebrew not found. Installing Python from python.org...${RESET}"
+        echo -e "${DIM}Homebrew not found. Installing Python 3.13 from python.org...${RESET}"
         ARCH=$(uname -m)
         if [ "$ARCH" = "arm64" ]; then
             URL="https://www.python.org/ftp/python/3.13.0/python-3.13.0-macos11.pkg"
@@ -45,13 +45,13 @@ install_python_macos() {
 }
 
 install_python_linux() {
-    echo -e "${YELLOW}! Python 3.11+ not found on Linux.${RESET}"
+    echo -e "${YELLOW}! Python 3.11–3.13 not found on Linux.${RESET}"
     if command -v apt &>/dev/null; then
-        echo -e "${DIM}Detected Debian/Ubuntu. Installing Python via apt...${RESET}"
+        echo -e "${DIM}Detected Debian/Ubuntu. Installing Python 3.13 via apt...${RESET}"
         sudo apt update -qq
         sudo apt install -y python3.13 python3.13-venv python3.13-dev
     elif command -v dnf &>/dev/null; then
-        echo -e "${DIM}Detected Fedora/RHEL. Installing Python via dnf...${RESET}"
+        echo -e "${DIM}Detected Fedora/RHEL. Installing Python 3.13 via dnf...${RESET}"
         sudo dnf install -y python3.13
     elif command -v pacman &>/dev/null; then
         echo -e "${DIM}Detected Arch. Installing Python via pacman...${RESET}"
@@ -70,10 +70,9 @@ find_python() {
     # Try python3.13, python3.12, python3.11, python3, python in order
     for bin in python3.13 python3.12 python3.11 python3 python; do
         if command -v "$bin" &>/dev/null; then
-            VERSION=$("$bin" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null)
             MAJOR=$("$bin" -c "import sys; print(sys.version_info.major)" 2>/dev/null)
             MINOR=$("$bin" -c "import sys; print(sys.version_info.minor)" 2>/dev/null)
-            if [ "$MAJOR" -ge 3 ] && [ "$MINOR" -ge 11 ] && [ "$MINOR" -le 13 ] 2>/dev/null; then
+            if [ "$MAJOR" = "3" ] && [ "$MINOR" -ge 11 ] && [ "$MINOR" -le 13 ] 2>/dev/null; then
                 echo "$bin"
                 return 0
             fi
@@ -90,18 +89,22 @@ if PYTHON_BIN=$(find_python); then
     echo -e "  ${GREEN}✓${RESET} $PY_VER found: $PYTHON_BIN"
 else
     echo -e "  ${RED}✗${RESET} Python 3.11–3.13 not found."
-    echo -e "  ${DIM}Auto-installing...${RESET}"
+    echo -e "  ${DIM}Auto-installing Python 3.13...${RESET}"
     if [ "$(uname)" = "Darwin" ]; then
         install_python_macos
     else
         install_python_linux
     fi
-    # Re-check after install
+    # Re-check after install — scan all common binary names
+    echo -e "  ${DIM}Verifying installation...${RESET}"
+    sleep 2
     if PYTHON_BIN=$(find_python); then
         PY_VER=$("$PYTHON_BIN" --version 2>&1)
         echo -e "  ${GREEN}✓${RESET} Installed: $PY_VER ($PYTHON_BIN)"
     else
-        echo -e "  ${RED}✗${RESET} Python installation failed. Install manually: https://www.python.org/downloads/"
+        echo -e "  ${RED}✗${RESET} Python installation failed or not in PATH."
+        echo -e "  ${DIM}Try: export PATH=\"/usr/local/bin:\$PATH\" and re-run.${RESET}"
+        echo -e "  ${DIM}Or install manually: https://www.python.org/downloads/${RESET}"
         exit 1
     fi
 fi
