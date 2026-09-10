@@ -174,9 +174,18 @@ echo -e "  ${GREEN}[OK]${RESET} $(node --version)"
 # === Step 5: Python deps ===
 echo -e "  [5/7] Checking Python dependencies..."
 cd "$DIR"
+# Delete venv if it has wrong Python version
+if [ -f ".venv/bin/python" ]; then
+    VENV_VER=$(.venv/bin/python --version 2>&1 | grep -oE '[0-9]+\.[0-9]+')
+    NEED_VER=$("$PYTHON_BIN" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+')
+    if [ "$VENV_VER" != "$NEED_VER" ]; then
+        echo -e "  ${YELLOW}Venv has Python $VENV_VER, need $NEED_VER — recreating...${RESET}"
+        rm -rf .venv
+    fi
+fi
 if [ ! -d ".venv" ]; then
-    echo -e "  ${DIM}Running uv sync...${RESET}"
-    uv sync >"$LOG_DIR/uv_sync.log" 2>&1 || { tail -20 "$LOG_DIR/uv_sync.log"; fail "uv sync failed"; }
+    echo -e "  ${DIM}Running uv sync with $PYTHON_BIN ...${RESET}"
+    UV_PYTHON="$PYTHON_BIN" uv sync >"$LOG_DIR/uv_sync.log" 2>&1 || { tail -20 "$LOG_DIR/uv_sync.log"; fail "uv sync failed"; }
 fi
 # Verify venv has correct Python
 VENV_PYTHON=".venv/bin/python"
