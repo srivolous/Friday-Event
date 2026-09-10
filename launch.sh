@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# Initialize pyenv if installed (puts python3.12 etc. in PATH)
+if [ -d "$HOME/.pyenv" ]; then
+    export PYENV_ROOT="$HOME/.pyenv"
+    export PATH="$PYENV_ROOT/bin:$PYENV_ROOT/shims:$PATH"
+    command -v pyenv &>/dev/null && eval "$(pyenv init -)" 2>/dev/null
+fi
+
 DIR="$(cd "$(dirname "$0")" && pwd)"
 CONFIG_ENV="$HOME/.config/friday/.env"
 LOG_DIR="$DIR/logs"
@@ -174,19 +181,34 @@ echo -e "  ${GREEN}[OK]${RESET} $(node --version)"
 # === Step 5: Python deps ===
 echo -e "  [5/7] Checking Python dependencies..."
 cd "$DIR"
+
+# Get expected Python version from our detected binary
+NEED_VER=$("$PYTHON_BIN" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+')
+
 # Delete venv if it has wrong Python version
 if [ -f ".venv/bin/python" ]; then
     VENV_VER=$(.venv/bin/python --version 2>&1 | grep -oE '[0-9]+\.[0-9]+')
-    NEED_VER=$("$PYTHON_BIN" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+')
     if [ "$VENV_VER" != "$NEED_VER" ]; then
         echo -e "  ${YELLOW}Venv has Python $VENV_VER, need $NEED_VER — recreating...${RESET}"
         rm -rf .venv
     fi
 fi
+
 if [ ! -d ".venv" ]; then
     echo -e "  ${DIM}Running uv sync with $PYTHON_BIN ...${RESET}"
-    UV_PYTHON="$PYTHON_BIN" uv sync >"$LOG_DIR/uv_sync.log" 2>&1 || { tail -20 "$LOG_DIR/uv_sync.log"; fail "uv sync failed"; }
+    # Clear uv build cache to avoid stale Python 3.13 builds
+    uv cache clean 2>/dev/null
+    uv sync --python "$PYTHON_BIN" >"$LOG_DIR/uv_sync.log" 2>&1
+    if [ $? -ne 0 ]; then
+        echo -e "  ${RED}uv sync failed. Trying with --python-direct-only...${RESET}"
+        uv sync --python "$PYTHON_BIN" --python-direct-only >"$LOG_DIR/uv_sync.log" 2>&1
+    fi
+    if [ $? -ne 0 ]; then
+        tail -20 "$LOG_DIR/uv_sync.log"
+        fail "uv sync failed"
+    fi
 fi
+
 # Verify venv has correct Python
 VENV_PYTHON=".venv/bin/python"
 if [ -f "$VENV_PYTHON" ]; then
