@@ -102,9 +102,9 @@ def prompt_yn(question, default=True):
 
 # ─── Prerequisite checks ──────────────────────────────────────────────────────
 def _find_compatible_python():
-    """Find a Python 3.11–3.13 binary on the system."""
+    """Find a Python 3.11–3.12 binary on the system."""
     candidates = []
-    for name in ["python3.13", "python3.12", "python3.11", "python3", "python"]:
+    for name in ["python3.12", "python3.11", "python3", "python"]:
         path = shutil.which(name)
         if path:
             try:
@@ -113,7 +113,7 @@ def _find_compatible_python():
                     text=True, timeout=5
                 ).strip()
                 major, minor = map(int, out.split())
-                if major == 3 and 11 <= minor <= 13:
+                if major == 3 and 11 <= minor <= 12:
                     candidates.append((minor, path))
             except Exception:
                 pass
@@ -123,22 +123,22 @@ def _find_compatible_python():
     return None
 
 def _install_python():
-    """Attempt to auto-install Python 3.13."""
+    """Attempt to auto-install Python 3.12."""
     system = platform.system()
-    info("Attempting automatic Python 3.13 installation...")
+    info("Attempting automatic Python 3.12 installation...")
     try:
         if system == "Darwin":
             if shutil.which("brew"):
-                subprocess.run(["brew", "install", "python@3.13"], check=True)
+                subprocess.run(["brew", "install", "python@3.12"], check=True)
             else:
                 warn("Homebrew not found. Install it from https://brew.sh")
                 return False
         elif system == "Linux":
             if shutil.which("apt"):
                 subprocess.run(["sudo", "apt", "update", "-qq"], check=True)
-                subprocess.run(["sudo", "apt", "install", "-y", "python3.13", "python3.13-venv", "python3.13-dev"], check=True)
+                subprocess.run(["sudo", "apt", "install", "-y", "python3.12", "python3.12-venv", "python3.12-dev"], check=True)
             elif shutil.which("dnf"):
-                subprocess.run(["sudo", "dnf", "install", "-y", "python3.13"], check=True)
+                subprocess.run(["sudo", "dnf", "install", "-y", "python3.12"], check=True)
             elif shutil.which("pacman"):
                 subprocess.run(["sudo", "pacman", "-S", "--noconfirm", "python", "python-pip"], check=True)
             else:
@@ -146,7 +146,7 @@ def _install_python():
                 return False
         elif system == "Windows":
             if shutil.which("winget"):
-                subprocess.run(["winget", "install", "Python.Python.3.13", "--silent",
+                subprocess.run(["winget", "install", "Python.Python.3.12", "--silent",
                                 "--accept-source-agreements", "--accept-package-agreements"], check=True)
             else:
                 warn("winget not found. Install Python manually: https://www.python.org/downloads/")
@@ -162,11 +162,11 @@ def _install_python():
 def check_python():
     section("Python Check")
     v = sys.version_info
-    if v >= (3, 11) and v < (3, 14):
+    if v >= (3, 11) and v < (3, 13):
         success(f"Python {v.major}.{v.minor}.{v.micro} — OK")
         return True
 
-    warn(f"Python {v.major}.{v.minor}.{v.micro} found, but 3.11–3.13 required.")
+    warn(f"Python {v.major}.{v.minor}.{v.micro} found, but 3.11–3.12 required.")
 
     # Try to find a compatible version already installed
     found = _find_compatible_python()

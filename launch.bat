@@ -13,14 +13,14 @@ echo.
 set "PYTHON_BIN="
 
 REM Try known Python binaries in priority order
-for %%P in (python3.13 python3.12 python3.11) do (
+for %%P in (python3.12 python3.11) do (
     where %%P >nul 2>nul
     if not errorlevel 1 (
         for /f "tokens=2 delims= " %%V in ('%%P --version 2^>^&1') do (
             for /f "tokens=1,2 delims=." %%A in ("%%V") do (
                 set /a "PYMAJ=%%A"
                 set /a "PYMIN=%%B"
-                if !PYMAJ! equ 3 if !PYMIN! geq 11 if !PYMIN! leq 13 (
+                if !PYMAJ! equ 3 if !PYMIN! geq 11 if !PYMIN! leq 12 (
                     set "PYTHON_BIN=%%P"
                 )
             )
@@ -28,7 +28,7 @@ for %%P in (python3.13 python3.12 python3.11) do (
     )
 )
 
-REM Fallback: generic "python" — must be 3.11-3.13, reject 3.14+
+REM Fallback: generic "python" — must be 3.11-3.12, reject 3.13+
 if not defined PYTHON_BIN (
     where python >nul 2>nul
     if not errorlevel 1 (
@@ -36,7 +36,7 @@ if not defined PYTHON_BIN (
             for /f "tokens=1,2 delims=." %%A in ("%%V") do (
                 set /a "PYMAJ=%%A"
                 set /a "PYMIN=%%B"
-                if !PYMAJ! equ 3 if !PYMIN! geq 11 if !PYMIN! leq 13 (
+                if !PYMAJ! equ 3 if !PYMIN! geq 11 if !PYMIN! leq 12 (
                     set "PYTHON_BIN=python"
                 )
             )
@@ -49,20 +49,18 @@ if defined PYTHON_BIN (
     goto :python_ok
 )
 
-echo   [!!] Python 3.11-3.13 not found.
-echo   Auto-installing...
+echo   [!!] Python 3.11-3.12 not found.
+echo   Auto-installing Python 3.12...
 
 REM Method 1: Try winget (fastest, silent)
 where winget >nul 2>nul
 if not errorlevel 1 (
     echo   [i] Installing via winget...
-    winget install Python.Python.3.13 --silent --accept-source-agreements --accept-package-agreements
+    winget install Python.Python.3.12 --silent --accept-source-agreements --accept-package-agreements
     if not errorlevel 1 (
         REM Refresh PATH
-        set "PATH=%LOCALAPPDATA%\Programs\Python\Python313;%PATH%"
-        set "PATH=%LOCALAPPDATA%\Programs\Python\Python313\Scripts;%PATH%"
-        where python3.13 >nul 2>nul && set "PYTHON_BIN=python3.13" && goto :python_ok
-        where python >nul 2>nul && set "PYTHON_BIN=python" && goto :python_ok
+        set "PATH=%LOCALAPPDATA%\Programs\Python\Python312;%PATH%"
+        set "PATH=%LOCALAPPDATA%\Programs\Python\Python312\Scripts;%PATH%"
     )
 )
 
@@ -70,33 +68,33 @@ REM Method 2: Try choco
 where choco >nul 2>nul
 if not errorlevel 1 (
     echo   [i] Installing via Chocolatey...
-    choco install python3.13 -y
+    choco install python3.12 -y
     if not errorlevel 1 (
-        set "PATH=%PATH%;C:\Python313;C:\Python313\Scripts"
+        set "PATH=%PATH%;C:\Python312;C:\Python312\Scripts"
     )
 )
 
 REM Method 3: Download installer from python.org
-echo   [i] Downloading Python 3.13 installer from python.org...
-set "INSTALLER=%TEMP%\python-3.13.0-amd64.exe"
-curl -L -o "%INSTALLER%" "https://www.python.org/ftp/python/3.13.0/python-3.13.0-amd64.exe"
+echo   [i] Downloading Python 3.12 installer from python.org...
+set "INSTALLER=%TEMP%\python-3.12.7-amd64.exe"
+curl -L -o "%INSTALLER%" "https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe"
 if exist "%INSTALLER%" (
     echo   [i] Running silent installer...
     "%INSTALLER%" /quiet InstallAllUsers=1 PrependPath=1 Include_pip=1
     timeout /t 30 /nobreak >nul
-    set "PATH=%PATH%;C:\Program Files\Python313;C:\Program Files\Python313\Scripts"
+    set "PATH=%PATH%;C:\Program Files\Python312;C:\Program Files\Python312\Scripts"
     del "%INSTALLER%" 2>nul
 )
 
 REM Re-check after install
-for %%P in (python3.13 python3.12 python3.11 python) do (
+for %%P in (python3.12 python3.11 python) do (
     where %%P >nul 2>nul
     if not errorlevel 1 (
         for /f "tokens=2 delims= " %%V in ('%%P --version 2^>^&1') do (
             for /f "tokens=1,2 delims=." %%A in ("%%V") do (
                 set /a "PYMAJ2=%%A"
                 set /a "PYMIN2=%%B"
-                if !PYMAJ2! equ 3 if !PYMIN2! geq 11 if !PYMIN2! leq 13 (
+                if !PYMAJ2! equ 3 if !PYMIN2! geq 11 if !PYMIN2! leq 12 (
                     set "PYTHON_BIN=%%P"
                 )
             )
