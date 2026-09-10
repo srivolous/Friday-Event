@@ -6,7 +6,6 @@ CONFIG_ENV="$HOME/.config/friday/.env"
 LOG_DIR="$DIR/logs"
 mkdir -p "$LOG_DIR"
 
-# Colors
 BOLD="\033[1m"
 GREEN="\033[92m"
 YELLOW="\033[93m"
@@ -18,52 +17,46 @@ RESET="\033[0m"
 cleanup() {
     echo ""
     echo -e "${DIM}Shutting down F.R.I.D.A.Y...${RESET}"
-    if [ -n "$BACKEND_PID" ]; then
-        kill "$BACKEND_PID" 2>/dev/null || true
-    fi
+    if [ -n "$BACKEND_PID" ]; then kill "$BACKEND_PID" 2>/dev/null || true; fi
 }
 trap cleanup EXIT INT TERM
 
-# ─── Python auto-install ──────────────────────────────────────────────────────
+fail() {
+    echo -e "\n${RED}  [FATAL] $1${RESET}\n"
+    exit 1
+}
+
+# ─── Step 1: Python ───────────────────────────────────────────────────────────
+echo -e "\n  [1/7] Checking Python..."
+
 install_python_macos() {
-    echo -e "${YELLOW}! Python 3.11-3.12 not found on macOS.${RESET}"
+    echo -e "  ${YELLOW}! Auto-installing Python 3.12...${RESET}"
     if command -v brew &>/dev/null; then
-        echo -e "${DIM}Installing Python 3.12 via Homebrew...${RESET}"
-        brew install python@3.12
+        brew install python@3.12 || fail "brew install python@3.12 failed"
     else
-        echo -e "${DIM}Homebrew not found. Installing Python 3.12 from python.org...${RESET}"
         ARCH=$(uname -m)
         if [ "$ARCH" = "arm64" ]; then
             URL="https://www.python.org/ftp/python/3.12.7/python-3.12.7-macos11.pkg"
         else
             URL="https://www.python.org/ftp/python/3.12.7/python-3.12.7-macosx10.9.pkg"
         fi
-        TMP_PKG="/tmp/python-installer.pkg"
-        curl -L -o "$TMP_PKG" "$URL"
-        sudo installer -pkg "$TMP_PKG" -target /
-        rm -f "$TMP_PKG"
+        curl -L -o /tmp/python.pkg "$URL" || fail "Download failed"
+        sudo installer -pkg /tmp/python.pkg -target / || fail "Installer failed"
+        rm -f /tmp/python.pkg
     fi
 }
 
 install_python_linux() {
-    echo -e "${YELLOW}! Python 3.11-3.12 not found on Linux.${RESET}"
+    echo -e "  ${YELLOW}! Auto-installing Python 3.12...${RESET}"
     if command -v apt &>/dev/null; then
-        echo -e "${DIM}Detected Debian/Ubuntu. Installing Python 3.12 via apt...${RESET}"
-        sudo apt update -qq
-        sudo apt install -y python3.12 python3.12-venv python3.12-dev
+        sudo apt update -qq 2>/dev/null
+        sudo apt install -y python3.12 python3.12-venv python3.12-dev || fail "apt install failed"
     elif command -v dnf &>/dev/null; then
-        echo -e "${DIM}Detected Fedora/RHEL. Installing Python 3.12 via dnf...${RESET}"
-        sudo dnf install -y python3.12
+        sudo dnf install -y python3.12 || fail "dnf install failed"
     elif command -v pacman &>/dev/null; then
-        echo -e "${DIM}Detected Arch. Installing Python via pacman...${RESET}"
-        sudo pacman -S --noconfirm python python-pip
-    elif command -v apk &>/dev/null; then
-        echo -e "${DIM}Detected Alpine. Installing Python via apk...${RESET}"
-        sudo apk add python3 python3-dev
+        sudo pacman -S --noconfirm python python-pip || fail "pacman install failed"
     else
-        echo -e "${RED}✗ Could not detect package manager.${RESET}"
-        echo -e "${DIM}Install Python 3.12 manually: https://www.python.org/downloads/${RESET}"
-        exit 1
+        fail "No package manager found. Install Python 3.12 manually: https://www.python.org/downloads/"
     fi
 }
 
@@ -81,124 +74,122 @@ find_python() {
     return 1
 }
 
-echo -e "\n${CYAN}${BOLD}── Checking Python ──${RESET}\n"
-
 PYTHON_BIN=""
 if PYTHON_BIN=$(find_python); then
-    PY_VER=$("$PYTHON_BIN" --version 2>&1)
-    echo -e "  ${GREEN}✓${RESET} $PY_VER found: $PYTHON_BIN"
+    echo -e "  ${GREEN}[OK]${RESET} $("$PYTHON_BIN" --version 2>&1) ($PYTHON_BIN)"
 else
-    echo -e "  ${RED}✗${RESET} Python 3.11-3.12 not found."
-    echo -e "  ${DIM}Auto-installing Python 3.12...${RESET}"
     if [ "$(uname)" = "Darwin" ]; then
         install_python_macos
     else
         install_python_linux
     fi
-    echo -e "  ${DIM}Verifying installation...${RESET}"
     sleep 2
     if PYTHON_BIN=$(find_python); then
-        PY_VER=$("$PYTHON_BIN" --version 2>&1)
-        echo -e "  ${GREEN}✓${RESET} Installed: $PY_VER ($PYTHON_BIN)"
+        echo -e "  ${GREEN}[OK]${RESET} Installed: $("$PYTHON_BIN" --version 2>&1) ($PYTHON_BIN)"
     else
-        echo -e "  ${RED}✗${RESET} Python installation failed or not in PATH."
-        echo -e "  ${DIM}Try: export PATH=\"/usr/local/bin:\$PATH\" and re-run.${RESET}"
-        echo -e "  ${DIM}Or install manually: https://www.python.org/downloads/${RESET}"
-        exit 1
+        fail "Python installation failed. Try: export PATH=\"/usr/local/bin:\$PATH\""
     fi
 fi
 
-# ─── First-run check ──────────────────────────────────────────────────────────
+# ─── Step 2: Config ───────────────────────────────────────────────────────────
+echo -e "  [2/7] Checking configuration..."
 if [ ! -f "$CONFIG_ENV" ] && [ ! -f "$DIR/.env" ]; then
-    echo -e "\n${CYAN}${BOLD}No configuration found. Running setup wizard...${RESET}\n"
-    "$PYTHON_BIN" "$DIR/setup.py"
-    if [ $? -ne 0 ]; then
-        echo -e "\n${RED}✗ Setup failed. Check the output above.${RESET}\n"
-        exit 1
-    fi
-    echo ""
+    echo -e "  ${YELLOW}Running setup wizard...${RESET}"
+    "$PYTHON_BIN" "$DIR/setup.py" || fail "Setup wizard failed"
 fi
+[ -f "$CONFIG_ENV" ] || [ -f "$DIR/.env" ] || fail "No .env file after setup"
+echo -e "  ${GREEN}[OK]${RESET}"
 
-# ─── Check uv ─────────────────────────────────────────────────────────────────
+# ─── Step 3: uv ───────────────────────────────────────────────────────────────
+echo -e "  [3/7] Checking uv..."
 if ! command -v uv &>/dev/null; then
-    echo -e "${YELLOW}! uv not found. Installing...${RESET}"
+    echo -e "  ${YELLOW}Installing uv...${RESET}"
     "$PYTHON_BIN" -m pip install uv 2>/dev/null || "$PYTHON_BIN" -m ensurepip 2>/dev/null | "$PYTHON_BIN" -m pip install uv
-    if ! command -v uv &>/dev/null; then
-        echo -e "\n${RED}✗ Failed to install uv.${RESET}"
-        echo -e "${DIM}Install manually: pip install uv${RESET}\n"
-        exit 1
-    fi
+    command -v uv &>/dev/null || fail "uv install failed. Install manually: pip install uv"
 fi
+echo -e "  ${GREEN}[OK]${RESET}"
 
-# ─── Check Node.js ────────────────────────────────────────────────────────────
-if ! command -v node &>/dev/null; then
-    echo -e "\n${RED}✗ Node.js not found.${RESET}"
-    echo -e "${DIM}Install from: https://nodejs.org/${RESET}\n"
-    exit 1
+# ─── Step 4: Node.js ──────────────────────────────────────────────────────────
+echo -e "  [4/7] Checking Node.js..."
+command -v node &>/dev/null || fail "Node.js not found. Install: https://nodejs.org/"
+echo -e "  ${GREEN}[OK]${RESET} $(node --version)"
+
+# ─── Step 5: Python deps ─────────────────────────────────────────────────────
+echo -e "  [5/7] Checking Python dependencies..."
+cd "$DIR"
+if [ ! -d ".venv" ]; then
+    echo -e "  ${DIM}Running uv sync...${RESET}"
+    uv sync >"$LOG_DIR/uv_sync.log" 2>&1 || { cat "$LOG_DIR/uv_sync.log"; fail "uv sync failed"; }
 fi
-
-# ─── Install Python deps ─────────────────────────────────────────────────────
-if [ ! -d "$DIR/.venv" ]; then
-    echo -e "\n${DIM}Installing Python dependencies (uv sync)...${RESET}"
-    cd "$DIR"
-    uv sync 2>&1
-    if [ $? -ne 0 ]; then
-        echo -e "\n${RED}✗ uv sync failed. Check the error above.${RESET}"
-        echo -e "${DIM}Common fix: make sure Python 3.12 is installed and in PATH.${RESET}\n"
-        exit 1
-    fi
-    echo -e "${GREEN}✓${RESET} Python dependencies installed."
+# Verify critical deps
+if [ ! -d ".venv/lib/python3.12/site-packages/faster_whisper" ] && \
+   [ ! -d ".venv/lib/python3.11/site-packages/faster_whisper" ]; then
+    echo -e "  ${YELLOW}! faster-whisper missing, re-installing...${RESET}"
+    uv sync >"$LOG_DIR/uv_sync.log" 2>&1 || { cat "$LOG_DIR/uv_sync.log"; fail "uv sync failed"; }
 fi
+echo -e "  ${GREEN}[OK]${RESET}"
 
-# ─── Install Node deps ───────────────────────────────────────────────────────
-if [ ! -d "$DIR/mark-orb/node_modules" ]; then
-    echo -e "\n${DIM}Installing Electron dependencies (npm install)...${RESET}"
-    cd "$DIR/mark-orb"
-    npm install 2>&1
-    if [ $? -ne 0 ]; then
-        echo -e "\n${RED}✗ npm install failed. Check the error above.${RESET}\n"
-        exit 1
-    fi
-    echo -e "${GREEN}✓${RESET} Electron dependencies installed."
+# ─── Step 6: Node deps ────────────────────────────────────────────────────────
+echo -e "  [6/7] Checking Electron dependencies..."
+cd "$DIR/mark-orb"
+if [ ! -d "node_modules" ]; then
+    echo -e "  ${DIM}Running npm install...${RESET}"
+    npm install >"$LOG_DIR/npm_install.log" 2>&1 || { cat "$LOG_DIR/npm_install.log"; fail "npm install failed"; }
 fi
+# Verify electron-vite
+if [ ! -f "node_modules/.bin/electron-vite" ]; then
+    echo -e "  ${YELLOW}! electron-vite missing, re-installing...${RESET}"
+    npm install >"$LOG_DIR/npm_install.log" 2>&1 || { cat "$LOG_DIR/npm_install.log"; fail "npm install failed"; }
+fi
+[ -f "node_modules/.bin/electron-vite" ] || fail "electron-vite still missing after install"
+echo -e "  ${GREEN}[OK]${RESET}"
 
-# ─── Kill existing backend on port 5001 ──────────────────────────────────────
+# ─── Step 7: Launch ───────────────────────────────────────────────────────────
+echo -e "  [7/7] Starting F.R.I.D.A.Y. ..."
+echo ""
+
+# Kill stale backend
 if command -v lsof &>/dev/null; then
     lsof -ti:5001 2>/dev/null | xargs kill -9 2>/dev/null || true
 elif command -v fuser &>/dev/null; then
     fuser -k 5001/tcp 2>/dev/null || true
 fi
+sleep 1
 
-# ─── Start Python backend ─────────────────────────────────────────────────────
-echo -e "\n${GREEN}✓${RESET} Starting Python backend..."
+# Start backend
 cd "$DIR"
 uv run python_backend.py 5001 >"$LOG_DIR/backend.log" 2>&1 &
 BACKEND_PID=$!
 
-# Wait for backend to be ready
-echo -e "${DIM}Waiting for backend to start...${RESET}"
+# Wait for backend
 TIMEOUT=30
 for i in $(seq 1 $TIMEOUT); do
     if curl -s http://127.0.0.1:5001/health >/dev/null 2>&1; then
-        echo -e "${GREEN}✓${RESET} Backend ready on port 5001."
+        echo -e "  ${GREEN}[OK]${RESET} Backend running on port 5001."
         break
     fi
     if [ "$i" -eq "$TIMEOUT" ]; then
-        echo -e "\n${RED}✗ Backend did not start within ${TIMEOUT} seconds.${RESET}"
-        echo -e "${DIM}Check log: $LOG_DIR/backend.log${RESET}\n"
-        cat "$LOG_DIR/backend.log"
+        echo ""
+        echo -e "  ${RED}[FATAL] Backend did not start in ${TIMEOUT}s.${RESET}"
+        echo -e "  Last 20 lines of backend.log:"
+        echo "  ─────────────────────────────────"
+        tail -20 "$LOG_DIR/backend.log" 2>/dev/null
+        echo "  ─────────────────────────────────"
         echo ""
         exit 1
     fi
     sleep 1
 done
 
-# ─── Start Electron app ───────────────────────────────────────────────────────
-echo -e "${GREEN}✓${RESET} Launching F.R.I.D.A.Y. ..."
+echo ""
+
+# Start Electron
 cd "$DIR/mark-orb"
 npx electron-vite dev 2>&1
 
-echo -e "\n${GREEN}──────────────────────────────────────────${RESET}"
-echo -e "  F.R.I.D.A.Y. has been closed."
+echo ""
+echo -e "  ─────────────────────────────────────"
+echo -e "  F.R.I.D.A.Y. closed."
 echo -e "  Backend log: $LOG_DIR/backend.log"
-echo -e "${GREEN}──────────────────────────────────────────${RESET}\n"
+echo -e "  ─────────────────────────────────────"
+echo ""

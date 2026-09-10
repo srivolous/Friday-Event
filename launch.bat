@@ -7,14 +7,16 @@ set "CONFIG_ENV=%USERPROFILE%\.config\friday\.env"
 set "LOG_DIR=%DIR%logs"
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 
-REM ─── Python auto-install ─────────────────────────────────────────────────────
 echo.
-echo   ── Checking Python ──
+echo   ========================================
+echo     F.R.I.D.A.Y. Launcher
+echo   ========================================
 echo.
 
+REM ─── Step 1: Python ─────────────────────────────────────────────────────────
+echo   [1/7] Checking Python...
 set "PYTHON_BIN="
 
-REM Try known Python binaries in priority order
 for %%P in (python3.12 python3.11) do (
     where %%P >nul 2>nul
     if not errorlevel 1 (
@@ -22,15 +24,11 @@ for %%P in (python3.12 python3.11) do (
             for /f "tokens=1,2 delims=." %%A in ("%%V") do (
                 set /a "PYMAJ=%%A"
                 set /a "PYMIN=%%B"
-                if !PYMAJ! equ 3 if !PYMIN! geq 11 if !PYMIN! leq 12 (
-                    set "PYTHON_BIN=%%P"
-                )
+                if !PYMAJ! equ 3 if !PYMIN! geq 11 if !PYMIN! leq 12 set "PYTHON_BIN=%%P"
             )
         )
     )
 )
-
-REM Fallback: generic "python" — must be 3.11-3.12, reject 3.13+
 if not defined PYTHON_BIN (
     where python >nul 2>nul
     if not errorlevel 1 (
@@ -38,211 +36,202 @@ if not defined PYTHON_BIN (
             for /f "tokens=1,2 delims=." %%A in ("%%V") do (
                 set /a "PYMAJ=%%A"
                 set /a "PYMIN=%%B"
-                if !PYMAJ! equ 3 if !PYMIN! geq 11 if !PYMIN! leq 12 (
-                    set "PYTHON_BIN=python"
-                )
+                if !PYMAJ! equ 3 if !PYMIN! geq 11 if !PYMIN! leq 12 set "PYTHON_BIN=python"
             )
         )
     )
 )
 
-if defined PYTHON_BIN (
-    echo   [OK] Python found: !PYTHON_BIN!
-    goto :python_ok
-)
-
-echo   [!!] Python 3.11-3.12 not found.
-echo   Auto-installing Python 3.12...
-
-REM Method 1: Try winget (fastest, silent)
-where winget >nul 2>nul
-if not errorlevel 1 (
-    echo   [i] Installing via winget...
-    winget install Python.Python.3.12 --silent --accept-source-agreements --accept-package-agreements
+if not defined PYTHON_BIN (
+    echo   [!!] Python 3.11-3.12 not found. Auto-installing...
+    where winget >nul 2>nul
     if not errorlevel 1 (
-        set "PATH=%LOCALAPPDATA%\Programs\Python\Python312;%PATH%"
-        set "PATH=%LOCALAPPDATA%\Programs\Python\Python312\Scripts;%PATH%"
-    )
-)
-
-REM Method 2: Try choco
-where choco >nul 2>nul
-if not errorlevel 1 (
-    echo   [i] Installing via Chocolatey...
-    choco install python3.12 -y
+        winget install Python.Python.3.12 --silent --accept-source-agreements --accept-package-agreements
+        set "PATH=%LOCALAPPDATA%\Programs\Python\Python312;%LOCALAPPDATA%\Programs\Python\Python312\Scripts;%PATH%"
+    ) else where choco >nul 2>nul
     if not errorlevel 1 (
+        choco install python3.12 -y
         set "PATH=%PATH%;C:\Python312;C:\Python312\Scripts"
-    )
-)
-
-REM Method 3: Download installer from python.org
-echo   [i] Downloading Python 3.12 installer from python.org...
-set "INSTALLER=%TEMP%\python-3.12.7-amd64.exe"
-curl -L -o "%INSTALLER%" "https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe"
-if exist "%INSTALLER%" (
-    echo   [i] Running silent installer...
-    "%INSTALLER%" /quiet InstallAllUsers=1 PrependPath=1 Include_pip=1
-    timeout /t 30 /nobreak >nul
-    set "PATH=%PATH%;C:\Program Files\Python312;C:\Program Files\Python312\Scripts"
-    del "%INSTALLER%" 2>nul
-)
-
-REM Re-check after install
-for %%P in (python3.12 python3.11 python) do (
-    where %%P >nul 2>nul
-    if not errorlevel 1 (
-        for /f "tokens=2 delims= " %%V in ('%%P --version 2^>^&1') do (
-            for /f "tokens=1,2 delims=." %%A in ("%%V") do (
-                set /a "PYMAJ2=%%A"
-                set /a "PYMIN2=%%B"
-                if !PYMAJ2! equ 3 if !PYMIN2! geq 11 if !PYMIN2! leq 12 (
-                    set "PYTHON_BIN=%%P"
-                )
-            )
-        )
-    )
-)
-
-if defined PYTHON_BIN goto :python_ok
-
-echo.
-echo   [!!] Python 3.11-3.12 installation failed.
-echo   Install manually: https://www.python.org/downloads/
-echo.
-pause
-exit /b 1
-
-:python_ok
-
-REM ─── First-run check ─────────────────────────────────────────────────────────
-if not exist "%CONFIG_ENV%" (
-    if not exist "%DIR%.env" (
-        echo.
-        echo   No configuration found. Running setup wizard...
-        echo.
-        !PYTHON_BIN! "%DIR%setup.py"
-        if errorlevel 1 (
-            echo.
-            echo   [!!] Setup failed. Check the output above for errors.
-            echo.
-            pause
-            exit /b 1
-        )
-        echo.
-    )
-)
-
-REM ─── Check uv ────────────────────────────────────────────────────────────────
-where uv >nul 2>nul
-if errorlevel 1 (
-    echo   uv not found. Installing...
-    !PYTHON_BIN! -m pip install uv 2>nul
-    if errorlevel 1 (
-        !PYTHON_BIN! -m ensurepip 2>nul && !PYTHON_BIN! -m pip install uv
-    )
-    where uv >nul 2>nul
-    if errorlevel 1 (
-        echo.
-        echo   [!!] Failed to install uv.
-        echo   Install manually: pip install uv
-        echo.
+    ) else (
+        echo   [!!] No package manager found. Install Python 3.12 manually.
+        echo   https://www.python.org/downloads/
         pause
         exit /b 1
     )
+    REM Re-check
+    for %%P in (python3.12 python3.11 python) do (
+        where %%P >nul 2>nul
+        if not errorlevel 1 (
+            for /f "tokens=2 delims= " %%V in ('%%P --version 2^>^&1') do (
+                for /f "tokens=1,2 delims=." %%A in ("%%V") do (
+                    set /a "PM=%%A"
+                    set /a "PN=%%B"
+                    if !PM! equ 3 if !PN! geq 11 if !PN! leq 12 set "PYTHON_BIN=%%P"
+                )
+            )
+        )
+    )
 )
-
-REM ─── Check Node.js ───────────────────────────────────────────────────────────
-where node >nul 2>nul
-if errorlevel 1 (
-    echo.
-    echo   [!!] Node.js not found.
-    echo   Install from: https://nodejs.org/
-    echo.
+if not defined PYTHON_BIN (
+    echo   [!!] Python not available. Cannot continue.
     pause
     exit /b 1
 )
+echo   [OK] !PYTHON_BIN!
 
-REM ─── Install Python deps ─────────────────────────────────────────────────────
-if not exist "%DIR%.venv" (
-    echo.
-    echo   Installing Python dependencies (uv sync)...
-    cd /d "%DIR%"
-    uv sync 2>&1
+REM ─── Step 2: Config ─────────────────────────────────────────────────────────
+echo   [2/7] Checking configuration...
+if not exist "%CONFIG_ENV%" (
+    if not exist "%DIR%.env" (
+        echo   Running setup wizard...
+        !PYTHON_BIN! "%DIR%setup.py"
+        if errorlevel 1 (
+            echo   [!!] Setup failed.
+            pause
+            exit /b 1
+        )
+    )
+)
+if not exist "%CONFIG_ENV%" if not exist "%DIR%.env" (
+    echo   [!!] No .env file found after setup.
+    pause
+    exit /b 1
+)
+echo   [OK]
+
+REM ─── Step 3: uv ─────────────────────────────────────────────────────────────
+echo   [3/7] Checking uv...
+where uv >nul 2>nul
+if errorlevel 1 (
+    echo   Installing uv...
+    !PYTHON_BIN! -m pip install uv 2>nul
     if errorlevel 1 (
-        echo.
-        echo   [!!] uv sync failed. Check the error above.
-        echo   Common fix: make sure Python 3.12 is installed and in PATH.
-        echo.
+        !PYTHON_BIN! -m ensurepip 2>nul
+        !PYTHON_BIN! -m pip install uv 2>nul
+    )
+    where uv >nul 2>nul
+    if errorlevel 1 (
+        echo   [!!] uv failed to install.
         pause
         exit /b 1
     )
-    echo   [OK] Python dependencies installed.
 )
+echo   [OK]
 
-REM ─── Install Node deps ───────────────────────────────────────────────────────
-if not exist "%DIR%mark-orb\node_modules" (
-    echo.
-    echo   Installing Electron dependencies (npm install)...
-    cd /d "%DIR%mark-orb"
-    npm install 2>&1
-    if errorlevel 1 (
-        echo.
-        echo   [!!] npm install failed. Check the error above.
-        echo.
-        pause
-        exit /b 1
-    )
-    echo   [OK] Electron dependencies installed.
+REM ─── Step 4: Node.js ────────────────────────────────────────────────────────
+echo   [4/7] Checking Node.js...
+where node >nul 2>nul
+if errorlevel 1 (
+    echo   [!!] Node.js not found. Install from https://nodejs.org/
+    pause
+    exit /b 1
 )
+for /f "tokens=*" %%v in ('node --version 2^>^&1') do set "NODE_VER=%%v"
+echo   [OK] !NODE_VER!
 
-REM ─── Start Python backend ────────────────────────────────────────────────────
-echo.
-echo   Starting Python backend...
+REM ─── Step 5: Python deps ────────────────────────────────────────────────────
+echo   [5/7] Checking Python dependencies...
 cd /d "%DIR%"
+if not exist ".venv" (
+    echo   Running uv sync...
+    uv sync >"%LOG_DIR%\uv_sync.log" 2>&1
+    if errorlevel 1 (
+        echo   [!!] uv sync failed. Log: %LOG_DIR%\uv_sync.log
+        type "%LOG_DIR%\uv_sync.log"
+        pause
+        exit /b 1
+    )
+)
+REM Verify critical deps exist
+if not exist ".venv\Lib\site-packages\fastwhisper" (
+    if not exist ".venv\Lib\site-packages\faster_whisper" (
+        echo   [!!] faster-whisper not installed. Re-running uv sync...
+        uv sync >"%LOG_DIR%\uv_sync.log" 2>&1
+        if errorlevel 1 (
+            echo   [!!] uv sync failed again. Log: %LOG_DIR%\uv_sync.log
+            pause
+            exit /b 1
+        )
+    )
+)
+echo   [OK]
 
-REM Kill any existing backend on port 5001
-for /f "tokens=5" %%p in ('netstat -aon ^| findstr :5001 ^| findstr LISTENING 2^>nul') do (
+REM ─── Step 6: Node deps ──────────────────────────────────────────────────────
+echo   [6/7] Checking Electron dependencies...
+cd /d "%DIR%mark-orb"
+if not exist "node_modules" (
+    echo   Running npm install...
+    npm install >"%LOG_DIR%\npm_install.log" 2>&1
+    if errorlevel 1 (
+        echo   [!!] npm install failed. Log: %LOG_DIR%\npm_install.log
+        type "%LOG_DIR%\npm_install.log"
+        pause
+        exit /b 1
+    )
+)
+REM Verify electron-vite exists
+if not exist "node_modules\.bin\electron-vite.cmd" (
+    echo   [!!] electron-vite not found. Re-running npm install...
+    npm install >"%LOG_DIR%\npm_install.log" 2>&1
+    if errorlevel 1 (
+        echo   [!!] npm install failed again. Log: %LOG_DIR%\npm_install.log
+        pause
+        exit /b 1
+    )
+)
+if not exist "node_modules\.bin\electron-vite.cmd" (
+    echo   [!!] electron-vite still missing after install.
+    pause
+    exit /b 1
+)
+echo   [OK]
+
+REM ─── Step 7: Launch ─────────────────────────────────────────────────────────
+echo   [7/7] Starting F.R.I.D.A.Y. ...
+echo.
+
+REM Kill stale backend
+for /f "tokens=5" %%p in ('netstat -aon 2^>nul ^| findstr :5001 ^| findstr LISTENING 2^>nul') do (
     taskkill /PID %%p /F >nul 2>nul
 )
+timeout /t 1 /nobreak >nul
 
-REM Start backend and log output
-uv run python_backend.py 5001 >"%LOG_DIR%\backend.log" 2>&1
-set "BACKEND_PID=!errorlevel!"
+REM Start backend
+cd /d "%DIR%"
+start "Friday-Backend" /B uv run python_backend.py 5001 >"%LOG_DIR%\backend.log" 2>&1
 
 REM Wait for backend
-echo   Waiting for backend to start...
-set /a "count=0"
-:wait_loop
-if !count! geq 30 (
+set /a "WAIT=0"
+:wait_backend
+if !WAIT! geq 30 (
     echo.
-    echo   [!!] Backend did not start within 30 seconds.
-    echo   Check log: %LOG_DIR%\backend.log
-    echo.
-    type "%LOG_DIR%\backend.log"
+    echo   [!!] Backend did not start in 30s.
+    echo   Last 20 lines of backend.log:
+    echo   ----------------------------------------
+    powershell -Command "Get-Content '%LOG_DIR%\backend.log' -Tail 20"
+    echo   ----------------------------------------
     echo.
     pause
     exit /b 1
 )
 curl -s http://127.0.0.1:5001/health >nul 2>nul
-if not errorlevel 1 goto backend_ready
+if not errorlevel 1 goto backend_up
 timeout /t 1 /nobreak >nul
-set /a "count+=1"
-goto wait_loop
+set /a "WAIT+=1"
+goto wait_backend
 
-:backend_ready
-echo   [OK] Backend ready on port 5001.
-
-REM ─── Start Electron app ──────────────────────────────────────────────────────
+:backend_up
+echo   [OK] Backend running on port 5001.
 echo.
-echo   Launching F.R.I.D.A.Y. ...
+
+REM Start Electron
 cd /d "%DIR%mark-orb"
 npx electron-vite dev 2>&1
 
 echo.
-echo   ──────────────────────────────────────────
-echo   F.R.I.D.A.Y. has been closed.
-echo.
-echo   Backend log: %LOG_DIR%\backend.log
-echo   ──────────────────────────────────────────
+echo   ========================================
+echo     F.R.I.D.A.Y. closed.
+echo     Backend log: %LOG_DIR%\backend.log
+echo   ========================================
 echo.
 pause
