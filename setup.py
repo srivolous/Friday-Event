@@ -377,20 +377,17 @@ def install_deps():
         result = subprocess.run(
             [uv, "sync"],
             cwd=str(PROJECT_ROOT),
-            capture_output=True, text=True,
             shell=(platform.system() == "Windows")
         )
         if result.returncode == 0:
             success("Python dependencies installed.")
         else:
             error(f"uv sync failed (exit code {result.returncode}).")
-            if result.stderr:
-                err_lines = result.stderr.strip().splitlines()
-                for line in err_lines[-5:]:
-                    print(f"    {DIM}{line}{RESET}")
             warn("You may need to run manually: uv sync")
     except FileNotFoundError:
         error("uv not found. Install it: https://docs.astral.sh/uv/")
+    except KeyboardInterrupt:
+        warn("Interrupted.")
     except Exception as e:
         error(f"Unexpected error during install: {e}")
 
