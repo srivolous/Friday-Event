@@ -195,14 +195,10 @@ if [ -f ".venv/bin/python" ]; then
 fi
 
 if [ ! -d ".venv" ]; then
-    echo -e "  ${DIM}Running uv sync with $PYTHON_BIN ...${RESET}"
+    echo -e "  ${DIM}Running uv sync with $PYTHON_BIN (may take a few minutes on first run)...${RESET}"
     # Clear uv build cache to avoid stale Python 3.13 builds
     uv cache clean 2>/dev/null
     uv sync --python "$PYTHON_BIN" >"$LOG_DIR/uv_sync.log" 2>&1
-    if [ $? -ne 0 ]; then
-        echo -e "  ${RED}uv sync failed. Trying with --python-direct-only...${RESET}"
-        uv sync --python "$PYTHON_BIN" --python-direct-only >"$LOG_DIR/uv_sync.log" 2>&1
-    fi
     if [ $? -ne 0 ]; then
         tail -20 "$LOG_DIR/uv_sync.log"
         fail "uv sync failed"
