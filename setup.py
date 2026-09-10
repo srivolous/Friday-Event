@@ -231,10 +231,14 @@ def setup_gemini():
                 break
 
     if existing_key:
-        info(f"Existing key found: {existing_key[:8]}...{existing_key[-4:]}")
-        if not prompt_yn("Replace with a new key?", default=False):
-            print(f"\n  {GREEN}Keeping existing key.{RESET}")
-            return {"GOOGLE_API_KEY": existing_key, "GEMINI_MODEL": "gemini-2.0-flash"}
+        if existing_key.startswith("AIza"):
+            info(f"Existing key found: {existing_key[:8]}...{existing_key[-4:]}")
+            if not prompt_yn("Replace with a new key?", default=False):
+                print(f"\n  {GREEN}Keeping existing key.{RESET}")
+                return {"GOOGLE_API_KEY": existing_key, "GEMINI_MODEL": "gemini-2.0-flash"}
+        else:
+            warn(f"Existing key ({existing_key[:12]}...) is not a valid Gemini API key.")
+            info("Valid keys start with 'AIza'.")
 
     key = prompt_input("Gemini API Key", hidden=True)
     if not key:
@@ -438,12 +442,29 @@ def main():
         clear()
         banner()
 
-        # Check if already configured
-        if CONFIG_ENV.exists():
+        # Check if already configured — detect incomplete/broken configs
+        has_config = CONFIG_ENV.exists() or PROJECT_ENV.exists()
+        has_gemini = False
+        has_ollama = False
+        if has_config:
+            env_path = CONFIG_ENV if CONFIG_ENV.exists() else PROJECT_ENV
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line.startswith("GOOGLE_API_KEY="):
+                    val = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    # Valid Gemini keys start with AIza
+                    has_gemini = val.startswith("AIza")
+                if line.startswith("OLLAMA_URL="):
+                    val = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    has_ollama = bool(val)
+
+        if has_config and (has_gemini or has_ollama):
             info("Existing configuration found.")
-            if not prompt_yn("Reconfigure from scratch?", default=False):
+            if not prompt_yn("Reconfigure provider or settings?", default=False):
                 print(f"\n  {GREEN}Setup skipped. Existing config preserved.{RESET}\n")
                 return
+        elif has_config:
+            warn("Existing config has no valid provider. Let's set one up.")
 
         # Prereqs — Python is mandatory, uv and node are nice-to-have
         if not check_python():
