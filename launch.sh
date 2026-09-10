@@ -247,7 +247,7 @@ uv run python_backend.py 5001 >"$LOG_DIR/backend.log" 2>&1 &
 BACKEND_PID=$!
 
 # First run needs extra time for uv to finish installing packages
-TIMEOUT=120
+TIMEOUT=300
 for i in $(seq 1 $TIMEOUT); do
     curl -s http://127.0.0.1:5001/health >/dev/null 2>&1 && break
     if [ "$i" -eq "$TIMEOUT" ]; then
