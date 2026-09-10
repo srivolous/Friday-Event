@@ -62,7 +62,14 @@ if [ ! -d ".venv" ]; then
     echo -e "  ${DIM}Running uv sync...${RESET}"
     uv sync >"$LOG_DIR/uv_sync.log" 2>&1 || { tail -20 "$LOG_DIR/uv_sync.log"; fail "uv sync failed"; }
 fi
-echo -e "  ${GREEN}[OK]${RESET}"
+# Verify venv has correct Python
+VENV_PYTHON=".venv/bin/python"
+if [ -f "$VENV_PYTHON" ]; then
+    VENV_VER=$("$VENV_PYTHON" --version 2>&1)
+    echo -e "  ${GREEN}[OK]${RESET} venv Python: $VENV_VER"
+else
+    fail "No Python in .venv — run: uv sync"
+fi
 
 # === Step 6: Node deps ===
 echo -e "  [6/7] Checking Electron dependencies..."
@@ -87,7 +94,11 @@ BACKEND_PID=$!
 TIMEOUT=30
 for i in $(seq 1 $TIMEOUT); do
     curl -s http://127.0.0.1:5001/health >/dev/null 2>&1 && break
-    [ "$i" -eq "$TIMEOUT" ] && { tail -20 "$LOG_DIR/backend.log"; fail "Backend did not start in ${TIMEOUT}s"; }
+    if [ "$i" -eq "$TIMEOUT" ]; then
+        echo -e "\n  ${RED}Backend log (last 30 lines):${RESET}"
+        tail -30 "$LOG_DIR/backend.log" 2>/dev/null
+        fail "Backend did not start in ${TIMEOUT}s"
+    fi
     sleep 1
 done
 echo -e "  ${GREEN}[OK]${RESET} Backend running on port 5001.\n"
