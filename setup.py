@@ -320,31 +320,31 @@ def write_env(config):
     existing = {k: v for k, v in existing.items() if v}  # remove empty vals
 
     lines = [
-        "# ─── LiveKit (optional, for voice agent) ───",
+        "# --- LiveKit (optional, for voice agent) ---",
         f"LIVEKIT_URL={existing.get('LIVEKIT_URL', '')}",
         f"LIVEKIT_API_KEY={existing.get('LIVEKIT_API_KEY', '')}",
         f"LIVEKIT_API_SECRET={existing.get('LIVEKIT_API_SECRET', '')}",
         "",
-        "# ─── LLM Backend ───",
+        "# --- LLM Backend ---",
         f"GOOGLE_API_KEY={existing.get('GOOGLE_API_KEY', '')}",
         f"GEMINI_MODEL={existing.get('GEMINI_MODEL', 'gemini-2.0-flash')}",
         "",
-        "# ─── Ollama (fallback) ───",
+        "# --- Ollama (fallback) ---",
         f"OLLAMA_URL={existing.get('OLLAMA_URL', '')}",
         f"OLLAMA_MODEL={existing.get('OLLAMA_MODEL', 'llama3.1:latest')}",
         "",
-        "# ─── Email ───",
+        "# --- Email ---",
         f"GMAIL_USER={existing.get('GMAIL_USER', '')}",
         f"GMAIL_APP_PASSWORD={existing.get('GMAIL_APP_PASSWORD', '')}",
     ]
 
-    # Write to project root
-    PROJECT_ENV.write_text("\n".join(lines) + "\n")
+    # Write to project root (UTF-8 for cross-platform compat)
+    PROJECT_ENV.write_text("\n".join(lines) + "\n", encoding="utf-8")
     success(f"Written to {PROJECT_ENV}")
 
     # Also write to ~/.config/friday/ for installed builds
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    CONFIG_ENV.write_text("\n".join(lines) + "\n")
+    CONFIG_ENV.write_text("\n".join(lines) + "\n", encoding="utf-8")
     success(f"Written to {CONFIG_ENV}")
 
 # ─── Install dependencies ─────────────────────────────────────────────────────
