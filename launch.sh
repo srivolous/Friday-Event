@@ -18,18 +18,28 @@ echo -e "  ========================================\n"
 # === Step 1: Python ===
 echo -e "  [1/7] Checking Python..."
 PYTHON_BIN=""
-for bin in python3.13 python3.12 python3.11 python3 python; do
-    if command -v "$bin" &>/dev/null; then
-        ver=$("$bin" --version 2>&1 | awk '{print $2}' | cut -d. -f1,2)
+
+# Also check pyenv versions directory
+PYENV_PYTHONS=""
+if [ -d "$HOME/.pyenv/versions" ]; then
+    for v in "$HOME/.pyenv/versions/"*/bin/python3; do
+        [ -f "$v" ] && PYENV_PYTHONS="$PYENV_PYTHONS $v"
+    done
+fi
+
+# Search for Python 3.11-3.13 (3.14+ has no spacy/numpy wheels yet)
+for bin in python3.13 python3.12 python3.11 $PYENV_PYTHONS python3 python; do
+    if command -v "$bin" &>/dev/null || [ -f "$bin" ]; then
+        ver=$("$bin" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
         major=$(echo "$ver" | cut -d. -f1)
         minor=$(echo "$ver" | cut -d. -f2)
-        if [ "$major" -ge 3 ] && [ "$minor" -ge 11 ]; then
+        if [ "$major" -eq 3 ] && [ "$minor" -ge 11 ] && [ "$minor" -le 13 ]; then
             PYTHON_BIN="$bin"
             break
         fi
     fi
 done
-[ -n "$PYTHON_BIN" ] || fail "Python 3.11+ not found. Install: https://www.python.org/downloads/"
+[ -n "$PYTHON_BIN" ] || fail "Python 3.11-3.13 not found. Install: pyenv install 3.12"
 echo -e "  ${GREEN}[OK]${RESET} $("$PYTHON_BIN" --version 2>&1) ($PYTHON_BIN)"
 
 # === Step 2: Provider Selection ===

@@ -104,22 +104,28 @@ def prompt_yn(question, default=True):
 # ─── Prerequisite checks ──────────────────────────────────────────────────────
 def check_python():
     section("Python Check")
-    # Search for Python 3.11+ — check common versioned names first
+    # Search for Python 3.11-3.13 (3.14+ has no spacy/numpy wheels yet)
+    # Also check pyenv versions directory
+    pyenv_paths = []
+    pyenv_dir = Path.home() / ".pyenv" / "versions"
+    if pyenv_dir.exists():
+        for p in pyenv_dir.glob("*/bin/python3"):
+            pyenv_paths.append(str(p))
+
     found_bin = None
     found_ver = None
-    for name in ["python3.13", "python3.12", "python3.11", "python3", "python"]:
+    for name in ["python3.13", "python3.12", "python3.11"] + pyenv_paths + ["python3", "python"]:
         try:
             import shutil
-            path = shutil.which(name)
+            path = shutil.which(name) or (name if Path(name).is_absolute() and Path(name).exists() else None)
             if not path:
                 continue
             import subprocess
             out = subprocess.check_output([path, "--version"], text=True, stderr=subprocess.STDOUT).strip()
-            # Parse "Python 3.13.14" → (3, 13, 14)
             ver_str = out.replace("Python", "").strip()
             parts = ver_str.split(".")
             major, minor = int(parts[0]), int(parts[1])
-            if major == 3 and minor >= 11:
+            if major == 3 and 11 <= minor <= 13:
                 found_bin = path
                 found_ver = f"{major}.{minor}.{parts[2] if len(parts) > 2 else '0'}"
                 break
@@ -128,15 +134,12 @@ def check_python():
 
     if found_bin:
         success(f"Python {found_ver} — OK ({found_bin})")
-        # Make this the python for the rest of setup
-        import shutil as _shutil
         global PYTHON_BIN
         PYTHON_BIN = found_bin
         return True
 
-    error("Python 3.11+ not found.")
-    info("Install: https://www.python.org/downloads/")
-    info("After install, run: brew link python3  (if using Homebrew)")
+    error("Python 3.11-3.13 not found.")
+    info("Install: pyenv install 3.12")
     return False
 
 def check_uv():
