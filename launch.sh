@@ -217,11 +217,23 @@ fi
 # === Step 6: Node deps ===
 echo -e "  [6/7] Checking Electron dependencies..."
 cd "$DIR/mark-orb"
-if [ ! -d "node_modules" ]; then
+# Check for actual Electron binary, not just node_modules dir
+ELECTRON_BIN=""
+for p in "node_modules/electron/dist/electron" "node_modules/.cache/electron/electron"; do
+    [ -f "$p" ] && ELECTRON_BIN="$p" && break
+done
+if [ -z "$ELECTRON_BIN" ] || [ ! -f "node_modules/.bin/electron-vite" ]; then
     echo -e "  ${DIM}Running npm install...${RESET}"
-    npm install >"$LOG_DIR/npm_install.log" 2>&1 || { tail -20 "$LOG_DIR/npm_install.log"; fail "npm install failed"; }
+    npm install >"$LOG_DIR/npm_install.log" 2>&1
+    # Verify electron binary exists now
+    if [ ! -f "node_modules/electron/dist/electron" ]; then
+        echo -e "  ${YELLOW}Electron binary missing, running npx electron install...${RESET}"
+        npx electron install 2>/dev/null
+    fi
+    if [ ! -f "node_modules/.bin/electron-vite" ]; then
+        fail "electron-vite missing after install"
+    fi
 fi
-[ -f "node_modules/.bin/electron-vite" ] || { npm install 2>/dev/null; } || fail "electron-vite missing"
 echo -e "  ${GREEN}[OK]${RESET}"
 
 # === Step 7: Launch ===
