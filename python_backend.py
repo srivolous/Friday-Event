@@ -69,9 +69,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - [FridayBackend] - 
 # ——— LLM BACKEND CONFIGURATION ———
 # Priority: Gemini API (GOOGLE_API_KEY) → Remote/Local Ollama (OLLAMA_URL + OLLAMA_MODEL)
 GOOGLE_API_KEY   = os.getenv("GOOGLE_API_KEY", "").strip()
-OLLAMA_URL       = os.getenv("OLLAMA_URL", "").strip()   # e.g. http://192.168.1.50:11434
-OLLAMA_MODEL     = os.getenv("OLLAMA_MODEL", "llama3.1:latest")
-GEMINI_MODEL     = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+OLLAMA_URL       = os.getenv("OLLAMA_URL", "").strip().strip('"').strip("'")
+OLLAMA_MODEL     = os.getenv("OLLAMA_MODEL", "llama3.1:latest").strip().strip('"').strip("'")
+GEMINI_MODEL     = os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip().strip('"').strip("'")
 
 # --- SPEECH SYSTEMS INITIALIZATION (PRE-WARMED IN RAM FOR ZERO DELAY) ---
 logging.info("Pre-warming Faster-Whisper STT model...")
@@ -268,11 +268,16 @@ class LLMBackend:
             try:
                 return self._gemini_chat(messages, use_tools)
             except Exception as e:
-                logging.warning(f"[LLMBackend] Gemini call failed ({e}), falling back to Ollama.")
+                logging.error(f"[LLMBackend] Gemini call FAILED: {type(e).__name__}: {e}")
+                logging.warning("[LLMBackend] Falling back to Ollama...")
                 if self._ollama_client is None:
                     host = OLLAMA_URL if OLLAMA_URL else None
                     self._ollama_client = ollama.Client(host=host) if host else ollama.Client()
-                return self._ollama_chat(messages, use_tools, temperature, max_tokens)
+                try:
+                    return self._ollama_chat(messages, use_tools, temperature, max_tokens)
+                except Exception as e2:
+                    logging.error(f"[LLMBackend] Ollama also failed: {e2}")
+                    raise RuntimeError(f"Gemini failed ({e}) and Ollama unavailable: {e2}")
 
         if self.active_backend == "ollama":
             return self._ollama_chat(messages, use_tools, temperature, max_tokens)
