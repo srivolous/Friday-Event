@@ -28,9 +28,9 @@
   "devDependencies": {
     "electron": "^30.0.9",
     "electron-builder": "^24.13.3",
-    "electron-vite": "^2.2.0",
+    "electron-vite": "~2.2.0",
     "typescript": "^5.4.5",
-    "vite": "^5.2.11"
+    "vite": "~5.2.11"
   },
   "build": {
     "appId": "com.local.friday-jarvis",
