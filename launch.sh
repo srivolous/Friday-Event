@@ -239,8 +239,15 @@ if [ -f ".venv/bin/python" ]; then
     echo -e "  ${GREEN}[OK]${RESET} Packages verified."
 fi
 
-if command -v lsof &>/dev/null; then lsof -ti:5001 2>/dev/null | xargs kill -9 2>/dev/null || true; fi
-sleep 1
+# Kill any process on port 5001
+if command -v lsof &>/dev/null; then
+    lsof -ti:5001 2>/dev/null | xargs kill -9 2>/dev/null || true
+elif command -v fuser &>/dev/null; then
+    fuser -k 5001/tcp 2>/dev/null || true
+fi
+# Also kill any old python_backend.py processes
+pkill -f "python_backend.py" 2>/dev/null || true
+sleep 2
 
 cd "$DIR"
 uv run python_backend.py 5001 >"$LOG_DIR/backend.log" 2>&1 &
