@@ -398,13 +398,16 @@ async function checkBackendHealth() {
   try {
     const health = await window.mark.agentHealth()
     if (health && health.ok) {
-      setLlmStatus('ok', `Friday ready (${health.model || 'local'})`)
+      const backend = health.llm_backend || 'unknown'
+      const model = health.model || 'local'
+      const label = backend === 'gemini' ? `GEMINI · ${model}` : `OLLAMA · ${model}`
+      setLlmStatus('ok', label)
       return true
     }
   } catch (e) {
     console.warn('Backend health check error:', e)
   }
-  setLlmStatus('error', 'Friday backend starting…')
+  setLlmStatus('error', 'backend offline')
   return false
 }
 
@@ -457,7 +460,7 @@ async function handleUserTurn(userText) {
   }
 
   conversation.push({ role: 'user', content: msgToSend })
-  setLlmStatus('busy', 'Friday thinking…')
+  setLlmStatus('busy', 'thinking…')
 
   try {
     const agentRes = await window.mark.agentChat({ messages: conversation })

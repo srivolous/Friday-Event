@@ -71,7 +71,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - [FridayBackend] - 
 GOOGLE_API_KEY   = os.getenv("GOOGLE_API_KEY", "").strip()
 OLLAMA_URL       = os.getenv("OLLAMA_URL", "").strip().strip('"').strip("'")
 OLLAMA_MODEL     = os.getenv("OLLAMA_MODEL", "llama3.1:latest").strip().strip('"').strip("'")
-GEMINI_MODEL     = os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip().strip('"').strip("'")
+GEMINI_MODEL     = os.getenv("GEMINI_MODEL", "gemini-3.5-flash").strip().strip('"').strip("'")
 
 # --- SPEECH SYSTEMS INITIALIZATION (PRE-WARMED IN RAM FOR ZERO DELAY) ---
 logging.info("Pre-warming Faster-Whisper STT model...")

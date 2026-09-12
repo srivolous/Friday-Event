@@ -232,7 +232,7 @@ def setup_gemini():
             info(f"Existing key found: {existing_key[:8]}...{existing_key[-4:]}")
             if not prompt_yn("Replace with a new key?", default=False):
                 print(f"\n  {GREEN}Keeping existing key.{RESET}")
-                return {"GOOGLE_API_KEY": existing_key, "GEMINI_MODEL": "gemini-2.0-flash"}
+                return {"GOOGLE_API_KEY": existing_key, "GEMINI_MODEL": "gemini-3.5-flash"}
         else:
             warn(f"Existing key ({existing_key[:12]}...) is not a valid Gemini API key.")
             info("Valid keys start with 'AIza' or 'AQ.'.")
@@ -256,7 +256,7 @@ def setup_gemini():
         warn(msg)
         info("Saving key anyway — it will be validated when Friday starts.")
 
-    model = prompt_input("Gemini chat model", default="gemini-2.0-flash")
+    model = prompt_input("Gemini chat model", default="gemini-3.5-flash")
     return {
         "GOOGLE_API_KEY": key,
         "GEMINI_MODEL": model,
@@ -338,7 +338,7 @@ def write_env(config):
         "",
         "# --- LLM Backend ---",
         f"GOOGLE_API_KEY={existing.get('GOOGLE_API_KEY', '')}",
-        f"GEMINI_MODEL={existing.get('GEMINI_MODEL', 'gemini-2.0-flash')}",
+        f"GEMINI_MODEL={existing.get('GEMINI_MODEL', 'gemini-3.5-flash')}",
         "",
         "# --- Ollama (fallback) ---",
         f"OLLAMA_URL={existing.get('OLLAMA_URL', '')}",

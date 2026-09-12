@@ -65,7 +65,7 @@ if "!HTTP_CODE!"=="200" ( echo   [OK] Key validated. ) else ( echo   [WARN] Coul
 
 (
     echo GOOGLE_API_KEY=!GEMINI_KEY!
-    echo GEMINI_MODEL=gemini-2.0-flash
+    echo GEMINI_MODEL=gemini-3.5-flash
     echo OLLAMA_URL=
     echo OLLAMA_MODEL=llama3.1:latest
 ) > "%DIR%.env"
@@ -91,7 +91,7 @@ set /p "OLLAMA_MODEL=  Ollama model [llama3.1:latest]: "
 
 (
     echo GOOGLE_API_KEY=
-    echo GEMINI_MODEL=gemini-2.0-flash
+    echo GEMINI_MODEL=gemini-3.5-flash
     echo OLLAMA_URL=!OLLAMA_URL!
     echo OLLAMA_MODEL=!OLLAMA_MODEL!
 ) > "%DIR%.env"

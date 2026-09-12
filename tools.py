@@ -249,7 +249,7 @@ async def query_knowledge_base(query: str) -> str:
             try:
                 _ensure_genai()
                 response = get_gemini_client().models.generate_content(
-                    model="gemini-2.0-flash",
+                    model="gemini-3.5-flash",
                     contents=prompt,
                     config=_genai.types.GenerateContentConfig(temperature=0.0)
                 )

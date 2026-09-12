@@ -125,7 +125,7 @@ if [ "$PROVIDER" = "gemini" ]; then
     # Write .env
     cat > "$DIR/.env" << ENVEOF
 GOOGLE_API_KEY=$GEMINI_KEY
-GEMINI_MODEL=gemini-2.0-flash
+GEMINI_MODEL=gemini-3.5-flash
 OLLAMA_URL=
 OLLAMA_MODEL=llama3.1:latest
 ENVEOF
@@ -155,7 +155,7 @@ else
 
     cat > "$DIR/.env" << ENVEOF
 GOOGLE_API_KEY=
-GEMINI_MODEL=gemini-2.0-flash
+GEMINI_MODEL=gemini-3.5-flash
 OLLAMA_URL=$OLLAMA_URL
 OLLAMA_MODEL=$OLLAMA_MODEL
 ENVEOF
