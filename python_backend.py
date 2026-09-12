@@ -189,7 +189,7 @@ class LLMBackend:
         config_kwargs = {
             "system_instruction": system_msg,
             "temperature": 0.4,
-            "max_output_tokens": 256,
+            "max_output_tokens": 1024,
         }
         if use_tools:
             # Build Gemini function declarations from TOOL_SCHEMAS
@@ -224,7 +224,7 @@ class LLMBackend:
         return {"content": response.text.strip(), "tool_name": None, "tool_args": None}
 
     # ——— Ollama path ———
-    def _ollama_chat(self, messages: list, use_tools: bool, temperature=0.4, max_tokens=48) -> dict:
+    def _ollama_chat(self, messages: list, use_tools: bool, temperature=0.4, max_tokens=512) -> dict:
         """Send chat via Ollama. Returns {content, tool_name, tool_args} or raises."""
         import re
         kwargs = {
@@ -262,7 +262,7 @@ class LLMBackend:
         return {"content": content.strip(), "tool_name": None, "tool_args": None}
 
     # ——— Unified dispatch ———
-    def chat(self, messages: list, use_tools: bool, temperature=0.4, max_tokens=48) -> dict:
+    def chat(self, messages: list, use_tools: bool, temperature=0.4, max_tokens=512) -> dict:
         """Route to active backend. Returns {content, tool_name, tool_args}."""
         if self.active_backend == "gemini":
             try:
