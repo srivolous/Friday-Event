@@ -210,7 +210,10 @@ def initialize_rag_database():
     if not RAG_DATABASE:
         print("Loading RAG database index partitions into memory...")
         RAG_DATABASE = load_docs(FOLDER_PATH)
-        print(f"RAG operational. Indexed {len(RAG_DATABASE)} contextual fragments.")
+        if RAG_DATABASE:
+            print(f"RAG operational. Indexed {len(RAG_DATABASE)} contextual fragments.")
+        else:
+            print("RAG disabled — no documents indexed. Add files under the lectures/ folder to enable it.")
 
 # --- LIVEKIT FUNCTION TOOLS ---
 

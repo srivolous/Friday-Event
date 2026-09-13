@@ -34,14 +34,26 @@ signal.signal(signal.SIGTERM, _signal_handler)
 signal.signal(signal.SIGINT, _signal_handler)
 
 from dotenv import load_dotenv
-# Load .env: check ~/.config/friday/.env first, then project root
+
+# ——— Config precedence ———
+# Two .env locations: project root (BASE_DIR/.env) and user-level (~/.config/friday/.env).
+# Project .env wins — it's what you edit day to day.
 _config_dir = os.path.join(os.path.expanduser("~"), ".config", "friday")
 _config_env = os.path.join(_config_dir, ".env")
 _project_env = os.path.join(BASE_DIR, ".env")
+
+_env_sources = []
+if os.path.exists(_project_env):
+    load_dotenv(_project_env, override=True)
+    _env_sources.append(_project_env)
 if os.path.exists(_config_env):
-    load_dotenv(_config_env)
-elif os.path.exists(_project_env):
-    load_dotenv(_project_env)
+    load_dotenv(_config_env, override=False)  # fills gaps only
+    _env_sources.append(_config_env)
+
+if _env_sources:
+    logging.info(f"[Config] Loaded env: {_env_sources}")
+else:
+    logging.warning("[Config] No .env found — run setup.py.")
 
 import numpy as np
 import sounddevice as sd
@@ -63,8 +75,6 @@ def _ensure_genai():
 
 from prompts import AGENT_INSTRUCTION, SESSION_INSTRUCTION
 import tools
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - [FridayBackend] - %(levelname)s - %(message)s")
 
 # ——— LLM BACKEND CONFIGURATION ———
 # Priority: Gemini API (GOOGLE_API_KEY) → Remote/Local Ollama (OLLAMA_URL + OLLAMA_MODEL)
@@ -232,6 +242,7 @@ class LLMBackend:
             "messages": messages,
             "options": {"temperature": temperature, "num_predict": max_tokens, "top_p": 0.9},
             "keep_alive": "60m",
+            "think": False,
         }
         if use_tools:
             kwargs["tools"] = self.TOOL_SCHEMAS
@@ -259,6 +270,15 @@ class LLMBackend:
                 except Exception:
                     pass
 
+        if not content.strip():
+            logging.warning(
+                "[LLMBackend] Ollama returned empty content. "
+                f"model={OLLAMA_MODEL} done_reason={response.get('done_reason')} "
+                f"thinking={message.get('thinking')!r} "
+                f"eval_count={response.get('eval_count')} "
+                f"raw_message_keys={list(message.keys())}"
+            )
+
         return {"content": content.strip(), "tool_name": None, "tool_args": None}
 
     # ——— Unified dispatch ———
@@ -275,6 +295,9 @@ class LLMBackend:
                     self._ollama_client = ollama.Client(host=host) if host else ollama.Client()
                 try:
                     return self._ollama_chat(messages, use_tools, temperature, max_tokens)
+                except Exception as e2:
+                    logging.error(f"[LLMBackend] Ollama also failed: {e2}")
+                    raise RuntimeError(f"Gemini failed ({e}) and Ollama unavailable: {e2}")
                 except Exception as e2:
                     logging.error(f"[LLMBackend] Ollama also failed: {e2}")
                     raise RuntimeError(f"Gemini failed ({e}) and Ollama unavailable: {e2}")
@@ -308,6 +331,21 @@ import requests as _requests
 import smtplib as _smtplib
 from email.mime.multipart import MIMEMultipart as _MIMEMultipart
 from email.mime.text import MIMEText as _MIMEText
+
+def _check_ollama_status(timeout=1.5) -> dict:
+    """Lightweight reachability + model-existence check for /health."""
+    base = (OLLAMA_URL or "http://localhost:11434").rstrip("/")
+    try:
+        r = _requests.get(f"{base}/api/tags", timeout=timeout)
+        if r.status_code != 200:
+            return {"reachable": False, "model_found": False, "error": f"HTTP {r.status_code}"}
+        names = [m.get("name", "") for m in r.json().get("models", [])]
+        def _normalize(n):
+            return n if ":" in n else f"{n}:latest"
+        model_found = _normalize(OLLAMA_MODEL) in {_normalize(n) for n in names}
+        return {"reachable": True, "model_found": model_found, "available_models": names}
+    except Exception as e:
+        return {"reachable": False, "model_found": False, "error": str(e)}
 
 async def _tool_get_weather(city: str, **kwargs) -> str:
     try:
@@ -372,7 +410,6 @@ import sys as _sys
 async def _tool_open_url(url: str, **kwargs) -> str:
     """Open a URL in the default web browser (cross-platform)."""
     try:
-        # Ensure URL has a scheme
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
         _webbrowser.open(url)
@@ -380,29 +417,84 @@ async def _tool_open_url(url: str, **kwargs) -> str:
     except Exception as e:
         return f"Failed to open URL: {e}"
 
+# ——— open_app allowlist ———
+APP_ALIASES = {
+    "chrome": {"win32": "chrome", "darwin": "Google Chrome", "linux": "google-chrome"},
+    "google chrome": {"win32": "chrome", "darwin": "Google Chrome", "linux": "google-chrome"},
+    "firefox": {"win32": "firefox", "darwin": "Firefox", "linux": "firefox"},
+    "edge": {"win32": "msedge", "darwin": "Microsoft Edge", "linux": "microsoft-edge"},
+    "brave": {"win32": "brave", "darwin": "Brave Browser", "linux": "brave-browser"},
+    "opera": {"win32": "opera", "darwin": "Opera", "linux": "opera"},
+    "whatsapp": {"win32": "WhatsApp", "darwin": "WhatsApp", "linux": "whatsapp"},
+    "telegram": {"win32": "Telegram", "darwin": "Telegram", "linux": "telegram"},
+    "discord": {"win32": "Discord", "darwin": "Discord", "linux": "discord"},
+    "slack": {"win32": "Slack", "darwin": "Slack", "linux": "slack"},
+    "zoom": {"win32": "Zoom", "darwin": "zoom.us", "linux": "zoom"},
+    "teams": {"win32": "msteams", "darwin": "Microsoft Teams", "linux": "teams"},
+    "skype": {"win32": "skype", "darwin": "Skype", "linux": "skype"},
+    "signal": {"win32": "signal", "darwin": "Signal", "linux": "signal"},
+    "spotify": {"win32": "Spotify", "darwin": "Spotify", "linux": "spotify"},
+    "vlc": {"win32": "vlc", "darwin": "VLC", "linux": "vlc"},
+    "vscode": {"win32": "code", "darwin": "Visual Studio Code", "linux": "code"},
+    "visual studio code": {"win32": "code", "darwin": "Visual Studio Code", "linux": "code"},
+    "code": {"win32": "code", "darwin": "Visual Studio Code", "linux": "code"},
+    "terminal": {"win32": "wt", "darwin": "Terminal", "linux": "x-terminal-emulator"},
+    "cmd": {"win32": "cmd.exe", "darwin": "Terminal", "linux": "bash"},
+    "powershell": {"win32": "powershell.exe", "darwin": "Terminal", "linux": "bash"},
+    "postman": {"win32": "Postman", "darwin": "Postman", "linux": "postman"},
+    "figma": {"win32": "Figma", "darwin": "Figma", "linux": "figma"},
+    "blender": {"win32": "blender", "darwin": "Blender", "linux": "blender"},
+    "word": {"win32": "winword", "darwin": "Microsoft Word", "linux": "libreoffice --writer"},
+    "excel": {"win32": "excel", "darwin": "Microsoft Excel", "linux": "libreoffice --calc"},
+    "powerpoint": {"win32": "powerpnt", "darwin": "Microsoft PowerPoint", "linux": "libreoffice --impress"},
+    "libreoffice": {"win32": "soffice", "darwin": "LibreOffice", "linux": "libreoffice"},
+    "notepad": {"win32": "notepad.exe", "darwin": "TextEdit", "linux": "gedit"},
+    "explorer": {"win32": "explorer.exe", "darwin": "Finder", "linux": "nautilus"},
+    "file explorer": {"win32": "explorer.exe", "darwin": "Finder", "linux": "nautilus"},
+    "task manager": {"win32": "taskmgr.exe", "darwin": "Activity Monitor", "linux": "gnome-system-monitor"},
+    "settings": {"win32": "ms-settings:", "darwin": "System Preferences", "linux": "gnome-control-center"},
+    "calculator": {"win32": "calc.exe", "darwin": "Calculator", "linux": "gnome-calculator"},
+    "paint": {"win32": "mspaint.exe", "darwin": "Preview", "linux": "gimp"},
+    "notion": {"win32": "Notion", "darwin": "Notion", "linux": "notion"},
+    "obsidian": {"win32": "Obsidian", "darwin": "Obsidian", "linux": "obsidian"},
+    "steam": {"win32": "steam", "darwin": "Steam", "linux": "steam"},
+}
+
+def _resolve_app_name(app_name: str) -> str | None:
+    """Map a free-text app name to a known, allowlisted executable for the current platform."""
+    key = app_name.strip().lower()
+    platform_key = _sys.platform
+    if key in APP_ALIASES:
+        return APP_ALIASES[key].get(platform_key)
+    for alias, os_map in APP_ALIASES.items():
+        if alias in key or key in alias:
+            return os_map.get(platform_key)
+    return None
+
 async def _tool_open_app(app_name: str, **kwargs) -> str:
-    """Launch an application by name (cross-platform: macOS, Windows, Linux)."""
+    """Launch an application by name — only if it resolves to a known, allowlisted executable."""
+    if not app_name or not app_name.strip():
+        return "No application name was given."
+
+    resolved = _resolve_app_name(app_name)
+    if not resolved:
+        return (
+            f'"{app_name}" is not a recognized application. '
+            "I can only launch applications on my known list (browsers, editors, "
+            "chat apps, and similar common tools)."
+        )
+
     try:
         platform = _sys.platform
-        if platform == "darwin":  # macOS
-            _subprocess.Popen(["open", "-a", app_name])
-        elif platform == "win32":  # Windows
-            # 'start' is a shell built-in on Windows
-            _subprocess.Popen(["cmd", "/c", "start", "", app_name], shell=False)
-        else:  # Linux / other Unix
-            # Try xdg-open first, then fall back to launching by name
-            try:
-                _subprocess.Popen(["xdg-open", app_name])
-            except FileNotFoundError:
-                _subprocess.Popen([app_name])
+        if platform == "darwin":
+            _subprocess.Popen(["open", "-a", resolved])
+        elif platform == "win32":
+            _subprocess.Popen(["cmd", "/c", "start", "", resolved], shell=False)
+        else:
+            _subprocess.Popen(resolved.split(" "))
         return f"Launched {app_name}."
     except Exception as e:
-        # Last resort: try subprocess directly by name
-        try:
-            _subprocess.Popen([app_name])
-            return f"Launched {app_name}."
-        except Exception as e2:
-            return f"Could not launch {app_name}: {e2}"
+        return f"Could not launch {app_name}: {e}"
 
 AVAILABLE_PYTHON_TOOLS = {
     "query_knowledge_base": _tool_query_knowledge_base,
@@ -481,6 +573,7 @@ def should_pass_tools(user_text: str) -> bool:
     return has_tool_keyword
 
 async def process_chat(history: list):
+    # Python is the single source of truth for the system prompt
     system_content = AGENT_INSTRUCTION + OFFLINE_TOOL_GUARDRAIL
     formatted_messages = [{"role": "system", "content": system_content}]
 
@@ -488,7 +581,7 @@ async def process_chat(history: list):
     for msg in history:
         role = msg.get("role")
         content = msg.get("content", "")
-        if role in ["user", "assistant", "system"] and content:
+        if role in ["user", "assistant"] and content:
             formatted_messages.append({"role": role, "content": content})
             if role == "user":
                 last_user_msg = content
@@ -550,8 +643,17 @@ async def process_chat(history: list):
             }
 
         # ——— Plain conversational reply ———
+        final_content = clean_friday_response(result["content"] or "")
+        if not final_content:
+            logging.warning("Model returned an empty response for a plain conversational turn.")
+            return {
+                "content": "",
+                "tool_calls": [],
+                "tool_result": None,
+                "error": "The model returned an empty response.",
+            }
         return {
-            "content": clean_friday_response(result["content"] or ""),
+            "content": final_content,
             "tool_calls": [],
             "tool_result": None,
         }
@@ -579,15 +681,25 @@ class FridayHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed_path = urlparse(self.path).path
         if parsed_path == "/health":
+            gemini_configured = bool(GOOGLE_API_KEY)
+            ollama_status = _check_ollama_status()
+            llm_ready = ollama_status["reachable"] and ollama_status["model_found"]
+            rag_count = len(tools.RAG_DATABASE)
+            rag_status = f"ready ({rag_count} fragments)" if rag_count else "disabled (no documents indexed)"
+
             self._set_headers(200)
             self.wfile.write(json.dumps({
-                "status": "ok",
+                "status": "ok" if llm_ready else "degraded",
                 "agent": "Friday",
                 "llm_backend": llm.active_backend,
+                "llm_ready": llm_ready,
                 "model": GEMINI_MODEL if llm.active_backend == "gemini" else OLLAMA_MODEL,
                 "embed_model": tools._get_active_embed_model(),
                 "rag_backend": tools.RAG_LLM_BACKEND,
+                "rag_status": rag_status,
                 "ollama_endpoint": OLLAMA_URL or "localhost:11434",
+                "ollama": ollama_status,
+                "gemini_configured": gemini_configured,
                 "stt": "faster-whisper (local)",
                 "tts": "kokoro (local)"
             }).encode("utf-8"))
