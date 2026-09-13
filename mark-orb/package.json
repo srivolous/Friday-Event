@@ -8,14 +8,14 @@
   "author": "you",
   "license": "MIT",
   "scripts": {
-    "predev": "node fix-electron.js",
-    "dev": "electron-vite dev",
-    "build": "electron-vite build",
-    "preview": "electron-vite preview",
-    "dist": "electron-vite build && electron-builder",
-    "dist:win": "electron-vite build && electron-builder --win",
-    "dist:mac": "electron-vite build && electron-builder --mac",
-    "dist:linux": "electron-vite build && electron-builder --linux"
+    "predev": "node fix-electron.js dev",
+    "dev": "",
+    "build": "node fix-electron.js build",
+    "preview": "node fix-electron.js preview",
+    "dist": "node fix-electron.js build && electron-builder",
+    "dist:win": "node fix-electron.js build && electron-builder --win",
+    "dist:mac": "node fix-electron.js build && electron-builder --mac",
+    "dist:linux": "node fix-electron.js build && electron-builder --linux"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.14",

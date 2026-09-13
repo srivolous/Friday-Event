@@ -178,7 +178,7 @@ if !errorlevel! neq 0 (
 echo.
 
 cd /d "%DIR%mark-orb"
-npx electron-vite dev
+npm run dev
 
 echo.
 echo   ========================================

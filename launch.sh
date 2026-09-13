@@ -294,7 +294,7 @@ done
 echo -e "  ${GREEN}[OK]${RESET} Backend running on port 5001.\n"
 
 cd "$DIR/mark-orb"
-npx electron-vite dev 2>&1
+npm run dev 2>&1
 
 echo -e "\n  ========================================"
 echo -e "    F.R.I.D.A.Y. closed. Log: $LOG_DIR/backend.log"
