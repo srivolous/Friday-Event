@@ -236,11 +236,16 @@ fi
 echo -e "  ${DIM}Running npm install...${RESET}"
 npm install >"$LOG_DIR/npm_install.log" 2>&1
 
-# Verify electron binary — if missing, run its install script directly
+# Verify electron binary — if missing, reinstall electron package
 ELECTRON_BIN="node_modules/electron/dist/electron"
 if [ ! -f "$ELECTRON_BIN" ]; then
-    echo -e "  ${YELLOW}Electron binary missing, downloading...${RESET}"
-    node node_modules/electron/install.js 2>/dev/null
+    echo -e "  ${YELLOW}Electron binary missing, reinstalling...${RESET}"
+    rm -rf node_modules/electron
+    npm install electron 2>/dev/null
+    # If still missing, try with explicit cache clear
+    if [ ! -f "$ELECTRON_BIN" ]; then
+        ELECTRON_SKIP_BINARY_DOWNLOAD=0 npm install electron 2>/dev/null
+    fi
 fi
 
 # Final check
