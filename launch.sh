@@ -14,7 +14,17 @@ mkdir -p "$LOG_DIR"
 
 GREEN="\033[92m"; YELLOW="\033[93m"; RED="\033[91m"; CYAN="\033[96m"; DIM="\033[2m"; BOLD="\033[1m"; RESET="\033[0m"
 
-cleanup() { echo -e "\n${DIM}Shutting down...${RESET}"; [ -n "$BACKEND_PID" ] && kill "$BACKEND_PID" 2>/dev/null; }
+cleanup() {
+    echo -e "\n${DIM}Shutting down...${RESET}"
+    [ -n "$BACKEND_PID" ] && kill "$BACKEND_PID" 2>/dev/null
+    # Kill port 5001 too
+    if command -v lsof &>/dev/null; then
+        lsof -ti:5001 2>/dev/null | xargs kill -9 2>/dev/null || true
+    elif command -v fuser &>/dev/null; then
+        fuser -k 5001/tcp 2>/dev/null || true
+    fi
+    pkill -f "python_backend.py" 2>/dev/null || true
+}
 trap cleanup EXIT INT TERM
 fail() { echo -e "\n${RED}  [FATAL] $1${RESET}\n"; exit 1; }
 
@@ -293,8 +303,38 @@ for i in $(seq 1 $TIMEOUT); do
 done
 echo -e "  ${GREEN}[OK]${RESET} Backend running on port 5001.\n"
 
+# Try Electron frontend, fall back to browser
 cd "$DIR/mark-orb"
-npm run dev 2>&1
+FRONTEND_OK=false
+if [ -f "node_modules/.bin/electron-vite" ]; then
+    npm run dev 2>&1 &
+    FRONTEND_PID=$!
+    # Wait a few seconds to see if it crashes immediately
+    sleep 5
+    if kill -0 "$FRONTEND_PID" 2>/dev/null; then
+        FRONTEND_OK=true
+        wait "$FRONTEND_PID" 2>/dev/null
+    else
+        echo -e "  ${YELLOW}Electron failed to start, opening in browser...${RESET}"
+    fi
+fi
+
+if [ "$FRONTEND_OK" = false ]; then
+    # Build static frontend and serve from backend
+    if [ ! -f "$DIR/mark-orb/out/renderer/index.html" ]; then
+        echo -e "  ${DIM}Building frontend...${RESET}"
+        cd "$DIR/mark-orb"
+        npx electron-vite build 2>/dev/null || true
+    fi
+    echo -e "  ${DIM}Opening http://127.0.0.1:5001 in browser...${RESET}"
+    if command -v xdg-open &>/dev/null; then
+        xdg-open "http://127.0.0.1:5001" 2>/dev/null &
+    elif command -v open &>/dev/null; then
+        open "http://127.0.0.1:5001" 2>/dev/null &
+    fi
+    echo -e "  ${DIM}Press Ctrl+C to stop.${RESET}"
+    wait "$BACKEND_PID" 2>/dev/null
+fi
 
 echo -e "\n  ========================================"
 echo -e "    F.R.I.D.A.Y. closed. Log: $LOG_DIR/backend.log"
