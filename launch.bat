@@ -139,8 +139,8 @@ if not exist "node_modules\.bin\electron-vite.cmd" (
     npm install
 )
 if not exist "node_modules\electron\dist\electron.exe" (
-    echo   Electron binary missing, running npx electron install...
-    npx electron install
+    echo   Electron binary missing, downloading...
+    node node_modules\electron\install.js
 )
 if not exist "node_modules\.bin\electron-vite.cmd" (
     echo   [FATAL] electron-vite missing after install. & pause & exit /b 1

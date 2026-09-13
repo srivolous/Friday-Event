@@ -227,8 +227,8 @@ if [ -z "$ELECTRON_BIN" ] || [ ! -f "node_modules/.bin/electron-vite" ]; then
     npm install >"$LOG_DIR/npm_install.log" 2>&1
     # Verify electron binary exists now
     if [ ! -f "node_modules/electron/dist/electron" ]; then
-        echo -e "  ${YELLOW}Electron binary missing, running npx electron install...${RESET}"
-        npx electron install 2>/dev/null
+        echo -e "  ${YELLOW}Electron binary missing, downloading...${RESET}"
+        node node_modules/electron/install.js 2>/dev/null || npx electron install 2>/dev/null
     fi
     if [ ! -f "node_modules/.bin/electron-vite" ]; then
         fail "electron-vite missing after install"

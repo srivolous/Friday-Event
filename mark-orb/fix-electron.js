@@ -18,7 +18,7 @@ if (fs.existsSync(electronDir)) {
   if (!fs.existsSync(binaryPath)) {
     console.log('[F.R.I.D.A.Y.] Electron binary missing, downloading...')
     try {
-      execSync('npx electron install', { stdio: 'inherit', cwd: process.cwd() })
+      execSync('node node_modules/electron/install.js', { stdio: 'inherit', cwd: process.cwd() })
       console.log('[F.R.I.D.A.Y.] Electron binary downloaded.')
     } catch (e) {
       console.error('[F.R.I.D.A.Y.] Failed to download Electron binary:', e.message)
