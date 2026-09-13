@@ -8,8 +8,7 @@
   "author": "you",
   "license": "MIT",
   "scripts": {
-    "predev": "node fix-electron.js dev",
-    "dev": "",
+    "dev": "node fix-electron.js dev",
     "build": "node fix-electron.js build",
     "preview": "node fix-electron.js preview",
     "dist": "node fix-electron.js build && electron-builder",
