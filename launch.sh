@@ -182,6 +182,14 @@ echo -e "  ${GREEN}[OK]${RESET} $(node --version)"
 echo -e "  [5/7] Checking Python dependencies..."
 cd "$DIR"
 
+# Restore critical files from git if missing
+for f in pyproject.toml uv.lock python_backend.py tools.py prompts.py; do
+    if [ ! -f "$f" ]; then
+        echo -e "  ${YELLOW}$f missing, restoring from git...${RESET}"
+        git checkout -- "$f" 2>/dev/null
+    fi
+done
+
 # Get expected Python version from our detected binary
 NEED_VER=$("$PYTHON_BIN" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+')
 
@@ -217,22 +225,28 @@ fi
 # === Step 6: Node deps ===
 echo -e "  [6/7] Checking Electron dependencies..."
 cd "$DIR/mark-orb"
-# Check for actual Electron binary, not just node_modules dir
-ELECTRON_BIN=""
-for p in "node_modules/electron/dist/electron" "node_modules/.cache/electron/electron"; do
-    [ -f "$p" ] && ELECTRON_BIN="$p" && break
-done
-if [ -z "$ELECTRON_BIN" ] || [ ! -f "node_modules/.bin/electron-vite" ]; then
-    echo -e "  ${DIM}Running npm install...${RESET}"
-    npm install >"$LOG_DIR/npm_install.log" 2>&1
-    # Verify electron binary exists now
-    if [ ! -f "node_modules/electron/dist/electron" ]; then
-        echo -e "  ${YELLOW}Electron binary missing, downloading...${RESET}"
-        node node_modules/electron/install.js 2>/dev/null || npx electron install 2>/dev/null
-    fi
-    if [ ! -f "node_modules/.bin/electron-vite" ]; then
-        fail "electron-vite missing after install"
-    fi
+
+# Restore package.json from git if missing
+if [ ! -f "package.json" ]; then
+    echo -e "  ${YELLOW}package.json missing, restoring from git...${RESET}"
+    git checkout -- package.json 2>/dev/null || fail "package.json missing and not in git"
+fi
+
+# Always run npm install — ensures deps are correct and electron binary exists
+echo -e "  ${DIM}Running npm install...${RESET}"
+npm install >"$LOG_DIR/npm_install.log" 2>&1
+
+# Verify electron binary — if missing, run its install script directly
+ELECTRON_BIN="node_modules/electron/dist/electron"
+if [ ! -f "$ELECTRON_BIN" ]; then
+    echo -e "  ${YELLOW}Electron binary missing, downloading...${RESET}"
+    node node_modules/electron/install.js 2>/dev/null
+fi
+
+# Final check
+if [ ! -f "node_modules/.bin/electron-vite" ]; then
+    tail -20 "$LOG_DIR/npm_install.log"
+    fail "electron-vite missing after npm install"
 fi
 echo -e "  ${GREEN}[OK]${RESET}"
 
