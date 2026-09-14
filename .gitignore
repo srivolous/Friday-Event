@@ -12,3 +12,4 @@ __pycache__/
 *.pyc
 mark-orb/build/icon.iconset/
 newwer/
+logs/
