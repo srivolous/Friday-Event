@@ -246,12 +246,15 @@ fi
 echo -e "  ${DIM}Running npm install...${RESET}"
 ELECTRON_SKIP_BINARY_DOWNLOAD=0 npm install >"$LOG_DIR/npm_install.log" 2>&1
 
-# Verify electron binary — if missing, reinstall electron package
+# Verify electron binary — if missing, force reinstall
 ELECTRON_BIN="node_modules/electron/dist/electron"
+if [ "$(uname)" = "Darwin" ]; then
+    ELECTRON_BIN="node_modules/electron/dist/Electron.app/Contents/MacOS/Electron"
+fi
 if [ ! -f "$ELECTRON_BIN" ]; then
-    echo -e "  ${YELLOW}Electron binary missing, reinstalling...${RESET}"
+    echo -e "  ${YELLOW}Electron binary missing, force reinstalling...${RESET}"
     rm -rf node_modules/electron
-    ELECTRON_SKIP_BINARY_DOWNLOAD=0 npm install electron >"$LOG_DIR/npm_install.log" 2>&1
+    ELECTRON_SKIP_BINARY_DOWNLOAD=0 npm install electron --force >"$LOG_DIR/npm_install.log" 2>&1
 fi
 
 # Final check

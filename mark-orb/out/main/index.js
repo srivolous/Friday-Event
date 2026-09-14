@@ -1,23 +1,29 @@
 import { shell, app, BrowserWindow, ipcMain } from "electron";
 import path from "node:path";
+import os from "node:os";
+import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { spawn, execSync } from "node:child_process";
-import os from "node:os";
+import __cjs_url__ from "node:url";
+import __cjs_path__ from "node:path";
 import __cjs_mod__ from "node:module";
-const __filename = import.meta.filename;
-const __dirname = import.meta.dirname;
+const __filename = __cjs_url__.fileURLToPath(import.meta.url);
+const __dirname = __cjs_path__.dirname(__filename);
 const require2 = __cjs_mod__.createRequire(import.meta.url);
 async function getWeather({ city }) {
-  if (!city || !String(city).trim()) throw new Error("city is required");
+  if (!city || !String(city).trim())
+    throw new Error("city is required");
   const res = await fetch(`https://wttr.in/${encodeURIComponent(city.trim())}?format=j1`, {
     headers: { "User-Agent": "curl/8.0" }
     // wttr.in serves ANSI art to browser-like UAs; curl UA gets JSON cleanly
   });
-  if (!res.ok) throw new Error(`weather lookup failed (${res.status})`);
+  if (!res.ok)
+    throw new Error(`weather lookup failed (${res.status})`);
   const data = await res.json();
   const cur = data.current_condition?.[0];
   const area = data.nearest_area?.[0];
-  if (!cur) throw new Error(`no weather data for "${city}"`);
+  if (!cur)
+    throw new Error(`no weather data for "${city}"`);
   return {
     location: [area?.areaName?.[0]?.value, area?.country?.[0]?.value].filter(Boolean).join(", ") || city,
     temperature_c: Number(cur.temp_C),
@@ -28,7 +34,8 @@ async function getWeather({ city }) {
   };
 }
 async function searchWeb({ query, max_results = 5 }) {
-  if (!query || !String(query).trim()) throw new Error("query is required");
+  if (!query || !String(query).trim())
+    throw new Error("query is required");
   const res = await fetch("https://html.duckduckgo.com/html/?q=" + encodeURIComponent(query), {
     headers: { "User-Agent": "Mozilla/5.0 (compatible; MarkOrb/1.0)" }
   });
@@ -42,7 +49,8 @@ async function searchWeb({ query, max_results = 5 }) {
   for (let i = 0; i < links.length && results.length < max_results; i++) {
     let url = links[i][1];
     const uddg = url.match(/uddg=([^&]+)/);
-    if (uddg) url = decodeURIComponent(uddg[1]);
+    if (uddg)
+      url = decodeURIComponent(uddg[1]);
     results.push({
       title: strip(links[i][2]),
       url,
@@ -99,16 +107,20 @@ const APP_ALIASES = {
 };
 function normalize(raw) {
   const key = raw.toLowerCase().trim();
-  if (APP_ALIASES[key]) return APP_ALIASES[key][PLATFORM] || raw;
+  if (APP_ALIASES[key])
+    return APP_ALIASES[key][PLATFORM] || raw;
   for (const [aliasKey, osMap] of Object.entries(APP_ALIASES)) {
-    if (key.includes(aliasKey) || aliasKey.includes(key)) return osMap[PLATFORM] || raw;
+    if (key.includes(aliasKey) || aliasKey.includes(key))
+      return osMap[PLATFORM] || raw;
   }
   return raw;
 }
 function commandExists(cmd) {
   try {
-    if (PLATFORM === "win32") execSync(`where ${cmd}`, { stdio: "ignore" });
-    else execSync(`command -v ${cmd}`, { stdio: "ignore", shell: "/bin/sh" });
+    if (PLATFORM === "win32")
+      execSync(`where ${cmd}`, { stdio: "ignore" });
+    else
+      execSync(`command -v ${cmd}`, { stdio: "ignore", shell: "/bin/sh" });
     return true;
   } catch {
     return false;
@@ -165,9 +177,11 @@ function launchLinux(name) {
 }
 const LAUNCHERS = { win32: launchWindows, darwin: launchMac, linux: launchLinux };
 async function openApp({ app_name }) {
-  if (!app_name || !String(app_name).trim()) throw new Error("app_name is required");
+  if (!app_name || !String(app_name).trim())
+    throw new Error("app_name is required");
   const launcher = LAUNCHERS[PLATFORM];
-  if (!launcher) throw new Error(`Unsupported OS: ${PLATFORM}`);
+  if (!launcher)
+    throw new Error(`Unsupported OS: ${PLATFORM}`);
   const raw = app_name.trim();
   const normalized = normalize(raw);
   const ok = launcher(normalized) || normalized !== raw && launcher(raw);
@@ -178,7 +192,7 @@ async function openApp({ app_name }) {
 }
 async function getLoudness() {
   try {
-    const mod = await import("./index-Dibiv9U0.js").then((n) => n.i);
+    const mod = await import("./index-CrFSS9pi.js").then((n) => n.i);
     return mod.default ?? mod;
   } catch {
     throw new Error('Volume control needs the optional "loudness" package. Run: npm install loudness');
@@ -191,7 +205,8 @@ async function setVolume({ level }) {
   return { volume: pct };
 }
 async function openUrl({ url }) {
-  if (!url || !String(url).trim()) throw new Error("url is required");
+  if (!url || !String(url).trim())
+    throw new Error("url is required");
   await shell.openExternal(url);
   return { opened: url };
 }
@@ -224,7 +239,8 @@ const TOOLS = {
 };
 async function runTool(name, args) {
   const tool = TOOLS[name];
-  if (!tool) throw new Error(`Unknown tool: ${name}`);
+  if (!tool)
+    throw new Error(`Unknown tool: ${name}`);
   return tool.fn(args);
 }
 function describeTools() {
@@ -235,27 +251,45 @@ const rootDir = path.resolve(__dirname$1, "../../..");
 const backendScript = path.join(rootDir, "python_backend.py");
 let mainWindow;
 let pythonProcess = null;
-function startPythonBackend() {
-  let useUv = false;
+function findPython() {
+  const isWin = process.platform === "win32";
   try {
-    execSync(process.platform === "win32" ? "where uv" : "which uv", { stdio: "ignore" });
-    useUv = true;
-  } catch (e) {
+    execSync(isWin ? "where uv" : "which uv", { stdio: "ignore" });
+    return { cmd: "uv", args: ["run", backendScript, "5001"], cwd: rootDir };
+  } catch (_) {
   }
-  if (useUv) {
-    console.log(`Starting Friday Python backend via Astral uv: uv run python_backend.py 5001`);
-    pythonProcess = spawn("uv", ["run", backendScript, "5001"], {
-      cwd: rootDir,
-      stdio: "inherit"
-    });
-  } else {
-    const pythonExec = path.join(rootDir, "venv", "bin", "python");
-    console.log(`Starting Friday Python backend via legacy venv: ${pythonExec} ${backendScript}`);
-    pythonProcess = spawn(pythonExec, [backendScript, "5001"], {
-      cwd: rootDir,
-      stdio: "inherit"
-    });
+  const venvPy = path.join(rootDir, ".venv", "bin", "python");
+  const venvPyWin = path.join(rootDir, ".venv", "Scripts", "python.exe");
+  const py = isWin ? venvPyWin : venvPy;
+  if (fs.existsSync(py)) {
+    return { cmd: py, args: [backendScript, "5001"], cwd: rootDir };
   }
+  const legacyPy = path.join(rootDir, "venv", "bin", "python");
+  const legacyPyWin = path.join(rootDir, "venv", "Scripts", "python.exe");
+  const lpy = isWin ? legacyPyWin : legacyPy;
+  if (fs.existsSync(lpy)) {
+    return { cmd: lpy, args: [backendScript, "5001"], cwd: rootDir };
+  }
+  for (const bin of ["python3", "python"]) {
+    try {
+      execSync(isWin ? `where ${bin}` : `which ${bin}`, { stdio: "ignore" });
+      return { cmd: bin, args: [backendScript, "5001"], cwd: rootDir };
+    } catch (_) {
+    }
+  }
+  return null;
+}
+function startPythonBackend() {
+  const py = findPython();
+  if (!py) {
+    console.error("No Python found. Run setup.py or install Python 3.11+.");
+    return;
+  }
+  console.log(`Starting Friday backend: ${py.cmd} ${py.args.join(" ")}`);
+  pythonProcess = spawn(py.cmd, py.args, {
+    cwd: py.cwd,
+    stdio: "inherit"
+  });
   pythonProcess.on("error", (err) => {
     console.error("Failed to start Friday Python backend:", err);
   });
@@ -295,7 +329,8 @@ app.whenReady().then(() => {
   startPythonBackend();
   createWindow();
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0)
+      createWindow();
   });
 });
 app.on("window-all-closed", () => {
@@ -303,7 +338,8 @@ app.on("window-all-closed", () => {
     pythonProcess.kill();
     pythonProcess = null;
   }
-  if (process.platform !== "darwin") app.quit();
+  if (process.platform !== "darwin")
+    app.quit();
 });
 app.on("will-quit", () => {
   if (pythonProcess) {
@@ -317,12 +353,14 @@ async function fetchWithRetry(url, options = {}, maxRetries = 6, delayMs = 800) 
   for (let i = 0; i < maxRetries; i++) {
     try {
       const res = await fetch(url, options);
-      if (res.ok) return res;
+      if (res.ok)
+        return res;
       lastErr = new Error(`HTTP ${res.status}`);
     } catch (err) {
       lastErr = err;
     }
-    if (i < maxRetries - 1) await new Promise((r) => setTimeout(r, delayMs));
+    if (i < maxRetries - 1)
+      await new Promise((r) => setTimeout(r, delayMs));
   }
   throw lastErr;
 }
@@ -367,7 +405,8 @@ ipcMain.handle("agent:speak", async (_evt, text) => {
 ipcMain.handle("agent:speaking_status", async () => {
   try {
     const res = await fetch(`${PYTHON_BACKEND_URL}/speaking_status`);
-    if (!res.ok) return { is_speaking: false };
+    if (!res.ok)
+      return { is_speaking: false };
     return await res.json();
   } catch {
     return { is_speaking: false };
@@ -423,7 +462,8 @@ ipcMain.handle("tools:call", async (_evt, { name, args }) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, args: args || {} })
     });
-    if (!res.ok) throw new Error(`Tool call failed: HTTP ${res.status}`);
+    if (!res.ok)
+      throw new Error(`Tool call failed: HTTP ${res.status}`);
     const data = await res.json();
     return { ok: true, result: data.result };
   } catch (err) {
@@ -446,7 +486,8 @@ ipcMain.handle("ollama:chat", async (_evt, payload) => {
 });
 ipcMain.handle("ollama:list", async (_evt, host) => {
   const res = await fetch(`${host || DEFAULT_OLLAMA_HOST}/api/tags`);
-  if (!res.ok) throw new Error(`Ollama returned ${res.status}`);
+  if (!res.ok)
+    throw new Error(`Ollama returned ${res.status}`);
   return res.json();
 });
 ipcMain.handle("shell:openExternal", (_evt, url) => shell.openExternal(url));

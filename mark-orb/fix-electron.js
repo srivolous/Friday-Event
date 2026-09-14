@@ -79,10 +79,11 @@ if (!electronBin) {
 process.env.ELECTRON_EXEC_PATH = path.resolve(electronBin)
 console.log(`[friday] Electron: ${electronBin}`)
 
-// Fix path.txt for good measure
+// Fix path.txt — must be the RELATIVE path from dist/ to the binary
 const pathFile = path.join(electronDir, 'path.txt')
 fs.mkdirSync(path.join(electronDir, 'dist'), { recursive: true })
-fs.writeFileSync(pathFile, binaryName)
+const relativeFromDist = path.relative(path.join(electronDir, 'dist'), path.resolve(electronBin))
+fs.writeFileSync(pathFile, relativeFromDist)
 
 if (process.platform !== 'win32') {
   try { fs.chmodSync(electronBin, 0o755) } catch (_) {}

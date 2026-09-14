@@ -25,7 +25,7 @@
     "loudness": "^0.4.0"
   },
   "devDependencies": {
-    "electron": "^30.0.9",
+    "electron": "^30.5.1",
     "electron-builder": "^24.13.3",
     "electron-vite": "~2.2.0",
     "typescript": "^5.4.5",
@@ -34,8 +34,12 @@
   "build": {
     "appId": "com.local.friday-jarvis",
     "productName": "FRIDAY",
-    "files": ["out/**/*"],
-    "directories": { "buildResources": "build" },
+    "files": [
+      "out/**/*"
+    ],
+    "directories": {
+      "buildResources": "build"
+    },
     "win": {
       "target": "nsis",
       "icon": "build/icon.ico"
@@ -46,7 +50,10 @@
       "category": "public.app-category.utilities"
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "icon": "build/icon.png",
       "category": "Utility"
     }
