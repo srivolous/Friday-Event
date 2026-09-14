@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * F.R.I.D.A.Y. Electron launcher
- * Finds Electron binary, sets ELECTRON_EXEC_PATH, runs electron-vite.
- * This is the single entry point — no env var leakage between processes.
+ * Finds Electron binary by searching disk, downloads if missing, writes path.txt,
+ * sets ELECTRON_EXEC_PATH, runs electron-vite. Never uses require('electron').
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -10,86 +10,92 @@ import { execSync, spawn } from 'node:child_process'
 
 const markOrbDir = process.cwd()
 const electronDir = path.join(markOrbDir, 'node_modules', 'electron')
-const binaryName = process.platform === 'win32' ? 'electron.exe' : 'electron'
+const distDir = path.join(electronDir, 'dist')
 
-const searchPaths = [
-  path.join(electronDir, 'dist', binaryName),
-  path.join(electronDir, 'dist', 'linux-unpacked', binaryName),
-  path.join(electronDir, 'dist', 'win32-unpacked', binaryName),
-  path.join(electronDir, 'dist', 'mac', 'Electron.app', 'Contents', 'MacOS', 'Electron'),
-]
+// Platform-specific binary names and paths
+function getSearchPaths() {
+  const p = process.platform
+  if (p === 'darwin') {
+    return [path.join(distDir, 'Electron.app', 'Contents', 'MacOS', 'Electron')]
+  }
+  if (p === 'win32') {
+    return [path.join(distDir, 'electron.exe'), path.join(distDir, 'win32-unpacked', 'electron.exe')]
+  }
+  // Linux
+  return [path.join(distDir, 'electron'), path.join(distDir, 'linux-unpacked', 'electron')]
+}
 
-function findElectron() {
-  // Check known paths
-  for (const p of searchPaths) {
+// What path.txt should contain (relative to dist/)
+function getRelativePath(binaryPath) {
+  return path.relative(distDir, binaryPath)
+}
+
+function findElectronBinary() {
+  for (const p of getSearchPaths()) {
     if (fs.existsSync(p)) return p
   }
-  // Ask Node's require
-  try {
-    const p = execSync('node -e "console.log(require(\'electron\'))"', {
-      cwd: markOrbDir, encoding: 'utf8', timeout: 10000
-    }).trim()
-    if (p && fs.existsSync(p)) return p
-  } catch (_) {}
   return null
 }
 
 function downloadElectron() {
   console.log('[friday] Electron binary not found — downloading...')
   const installScript = path.join(electronDir, 'install.js')
-  if (fs.existsSync(installScript)) {
-    try {
-      execSync(`node "${installScript}"`, {
-        stdio: 'inherit', cwd: markOrbDir,
-        env: { ...process.env, ELECTRON_SKIP_BINARY_DOWNLOAD: '0' }
-      })
-    } catch (e) {
-      console.error('[friday] install.js failed:', e.message)
-    }
+  if (!fs.existsSync(installScript)) {
+    console.error('[friday] install.js not found')
+    return null
   }
-  return findElectron()
+  try {
+    execSync(`node "${installScript}"`, {
+      stdio: 'inherit',
+      cwd: markOrbDir,
+      env: { ...process.env, ELECTRON_SKIP_BINARY_DOWNLOAD: '0' }
+    })
+  } catch (e) {
+    console.error('[friday] install.js failed:', e.message)
+  }
+  return findElectronBinary()
 }
 
 function reinstallElectron() {
   console.log('[friday] Reinstalling electron package...')
   try {
-    execSync('rm -rf node_modules/electron', { cwd: markOrbDir })
-    execSync('npm install electron', {
-      stdio: 'inherit', cwd: markOrbDir,
+    execSync('rm -rf node_modules/electron', { cwd: markOrbDir, stdio: 'ignore' })
+    execSync('npm install electron --force', {
+      stdio: 'inherit',
+      cwd: markOrbDir,
       env: { ...process.env, ELECTRON_SKIP_BINARY_DOWNLOAD: '0' }
     })
   } catch (e) {
     console.error('[friday] Reinstall failed:', e.message)
   }
-  return findElectron()
+  return findElectronBinary()
 }
 
 // --- Main ---
-let electronBin = findElectron()
+let electronBin = findElectronBinary()
 if (!electronBin) electronBin = downloadElectron()
 if (!electronBin) electronBin = reinstallElectron()
 
 if (!electronBin) {
   console.error('[friday] FATAL: Cannot find or download Electron binary')
-  console.error('Manual fix: cd mark-orb && rm -rf node_modules/electron && ELECTRON_SKIP_BINARY_DOWNLOAD=0 npm install electron')
+  console.error('[friday] Manual fix: cd mark-orb && rm -rf node_modules/electron && ELECTRON_SKIP_BINARY_DOWNLOAD=0 npm install electron')
   process.exit(1)
 }
 
-// Set env so electron-vite uses our found binary
+// Write path.txt — this is what electron's own index.js reads
+const pathFile = path.join(electronDir, 'path.txt')
+fs.mkdirSync(distDir, { recursive: true })
+fs.writeFileSync(pathFile, getRelativePath(electronBin))
+
+// Set env so electron-vite uses our found binary (bypasses its own detection)
 process.env.ELECTRON_EXEC_PATH = path.resolve(electronBin)
 console.log(`[friday] Electron: ${electronBin}`)
-
-// Fix path.txt — must be the RELATIVE path from dist/ to the binary
-const pathFile = path.join(electronDir, 'path.txt')
-fs.mkdirSync(path.join(electronDir, 'dist'), { recursive: true })
-const relativeFromDist = path.relative(path.join(electronDir, 'dist'), path.resolve(electronBin))
-fs.writeFileSync(pathFile, relativeFromDist)
 
 if (process.platform !== 'win32') {
   try { fs.chmodSync(electronBin, 0o755) } catch (_) {}
 }
 
-// Run electron-vite with the command passed as args
+// Run electron-vite
 const cmd = process.argv[2] || 'dev'
 const viteArgs = process.argv.slice(3)
 const allArgs = cmd === 'dev' ? ['dev', ...viteArgs] : cmd === 'build' ? ['build', ...viteArgs] : [cmd, ...viteArgs]
